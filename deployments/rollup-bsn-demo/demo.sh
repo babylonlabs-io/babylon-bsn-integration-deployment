@@ -59,7 +59,7 @@ echo "  ✅ Finality contract deployed at: $finalityContractAddr"
 echo ""
 echo "🔗 Step 2: Registering consumer chain..."
 
-REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --output json -y"
+REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --output json -y"
 echo "  → Command: $REGISTER_CMD"
 REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
 echo "  → Output: $REGISTER_OUTPUT"
