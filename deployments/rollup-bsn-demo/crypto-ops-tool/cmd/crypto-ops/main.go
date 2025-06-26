@@ -73,6 +73,8 @@ type SerializableRandListInfo struct {
 	SRListHex     []string `json:"sr_list_hex"`    // hex encoded private randomness
 	PRListHex     []string `json:"pr_list_hex"`    // hex encoded public randomness
 	CommitmentHex string   `json:"commitment_hex"` // hex encoded commitment
+	StartHeight   uint64   `json:"start_height"`   // original start height of the randomness
+	NumPubRand    uint64   `json:"num_pub_rand"`   // number of pub randomness values
 	ProofListData []struct {
 		Total    uint64   `json:"total"`
 		Index    uint64   `json:"index"`
@@ -82,11 +84,13 @@ type SerializableRandListInfo struct {
 }
 
 // ConvertToSerializable converts datagen.RandListInfo to SerializableRandListInfo
-func ConvertToSerializable(randListInfo *datagen.RandListInfo) (*SerializableRandListInfo, error) {
+func ConvertToSerializable(randListInfo *datagen.RandListInfo, startHeight, numPubRand uint64) (*SerializableRandListInfo, error) {
 	serializable := &SerializableRandListInfo{
 		SRListHex:     make([]string, len(randListInfo.SRList)),
 		PRListHex:     make([]string, len(randListInfo.PRList)),
 		CommitmentHex: hex.EncodeToString(randListInfo.Commitment),
+		StartHeight:   startHeight,
+		NumPubRand:    numPubRand,
 		ProofListData: make([]struct {
 			Total    uint64   `json:"total"`
 			Index    uint64   `json:"index"`
@@ -352,7 +356,7 @@ func verifyPublicRandomnessCommitment(contractAddr, consumerBtcPk string, expect
 	return nil
 }
 
-func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight uint64) error {
+func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight, startHeight uint64) error {
 	fmt.Fprintln(os.Stderr, "  → Generating mock block to vote on...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
@@ -371,13 +375,23 @@ func submitFinalitySignature(r *mathrand.Rand, contractAddr string, randListInfo
 	// Create message to sign (exactly like the tests)
 	msgToSign := append(sdk.Uint64ToBigEndian(blockHeight), blockToVote.AppHash...)
 
-	// Calculate randomness index (assuming randomness starts from height 1)
-	if blockHeight < 1 {
-		return fmt.Errorf("block height must be >= 1, got %d", blockHeight)
+	// Calculate randomness index relative to the start height
+	if blockHeight < startHeight {
+		return fmt.Errorf("block height %d is before randomness start height %d", blockHeight, startHeight)
 	}
-	randIndex := int(blockHeight - 1)
+
+	// Calculate the valid range for this randomness batch
+	endHeight := startHeight + uint64(len(randListInfo.SRList)) - 1
+	if blockHeight > endHeight {
+		return fmt.Errorf("block height %d is outside the committed randomness range [%d-%d] (start_height=%d, num_pub_rand=%d)",
+			blockHeight, startHeight, endHeight, startHeight, len(randListInfo.SRList))
+	}
+
+	randIndex := int(blockHeight - startHeight)
 	if randIndex >= len(randListInfo.SRList) {
-		return fmt.Errorf("block height %d requires randomness index %d, but only %d randomness values available", blockHeight, randIndex, len(randListInfo.SRList))
+		// This should never happen with the above checks, but keep as safety net
+		return fmt.Errorf("internal error: block height %d requires randomness index %d, but only %d randomness values available (start_height=%d)",
+			blockHeight, randIndex, len(randListInfo.SRList), startHeight)
 	}
 
 	// Generate EOTS signature using the calculated randomness index
@@ -529,7 +543,7 @@ func generatePublicRandomnessCommitment(r *mathrand.Rand, consumerFpSk *btcec.Pr
 }
 
 // Generate finality signature (crypto only, no chain submission)
-func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight uint64, blockHash []byte) (*bbn.BIP340PubKey, []byte, []byte, *merkle.Proof, error) {
+func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight, startHeight uint64, blockHash []byte) (*bbn.BIP340PubKey, []byte, []byte, *merkle.Proof, error) {
 	fmt.Fprintln(os.Stderr, "  → Generating finality signature...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
@@ -541,13 +555,23 @@ func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListI
 	// Create message to sign (exactly like the tests)
 	msgToSign := append(sdk.Uint64ToBigEndian(blockHeight), blockHash...)
 
-	// Calculate randomness index (assuming randomness starts from height 1)
-	if blockHeight < 1 {
-		return nil, nil, nil, nil, fmt.Errorf("block height must be >= 1, got %d", blockHeight)
+	// Calculate randomness index relative to the start height
+	if blockHeight < startHeight {
+		return nil, nil, nil, nil, fmt.Errorf("block height %d is before randomness start height %d", blockHeight, startHeight)
 	}
-	randIndex := int(blockHeight - 1)
+
+	// Calculate the valid range for this randomness batch
+	endHeight := startHeight + uint64(len(randListInfo.SRList)) - 1
+	if blockHeight > endHeight {
+		return nil, nil, nil, nil, fmt.Errorf("block height %d is outside the committed randomness range [%d-%d] (start_height=%d, num_pub_rand=%d)",
+			blockHeight, startHeight, endHeight, startHeight, len(randListInfo.SRList))
+	}
+
+	randIndex := int(blockHeight - startHeight)
 	if randIndex >= len(randListInfo.SRList) {
-		return nil, nil, nil, nil, fmt.Errorf("block height %d requires randomness index %d, but only %d randomness values available", blockHeight, randIndex, len(randListInfo.SRList))
+		// This should never happen with the above checks, but keep as safety net
+		return nil, nil, nil, nil, fmt.Errorf("internal error: block height %d requires randomness index %d, but only %d randomness values available (start_height=%d)",
+			blockHeight, randIndex, len(randListInfo.SRList), startHeight)
 	}
 
 	// Generate EOTS signature using the calculated randomness index
@@ -712,7 +736,7 @@ func main() {
 		}
 
 		// Convert to serializable format
-		serializable, err := ConvertToSerializable(randListInfo)
+		serializable, err := ConvertToSerializable(randListInfo, startHeight, numPubRand)
 		if err != nil {
 			log.Fatalf("Failed to convert randListInfo to serializable: %v", err)
 		}
@@ -780,7 +804,7 @@ func main() {
 		}
 
 		// Generate finality signature (crypto only)
-		bip340PK, publicRandomness, signature, proof, err := generateFinalitySignature(r, randListInfo, fpSk, blockHeight, blockHash)
+		bip340PK, publicRandomness, signature, proof, err := generateFinalitySignature(r, randListInfo, fpSk, blockHeight, serializable.StartHeight, blockHash)
 		if err != nil {
 			log.Fatalf("Failed to generate finality signature: %v", err)
 		}
@@ -845,7 +869,7 @@ func main() {
 			log.Fatalf("Failed to generate public randomness commitment: %v", err)
 		}
 
-		serializable, err := ConvertToSerializable(randListInfo)
+		serializable, err := ConvertToSerializable(randListInfo, startHeight, numPubRand)
 		if err != nil {
 			log.Fatalf("Failed to convert randListInfo to serializable: %v", err)
 		}
@@ -900,7 +924,7 @@ func main() {
 			log.Fatalf("Failed to convert serializable to randListInfo: %v", err)
 		}
 
-		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, blockHeight)
+		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, blockHeight, serializable.StartHeight)
 		if err != nil {
 			log.Fatalf("Failed to submit finality signature: %v", err)
 		}
@@ -943,7 +967,7 @@ func main() {
 			log.Fatalf("Failed to generate public randomness commitment: %v", err)
 		}
 
-		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, startHeight)
+		err = submitFinalitySignature(r, contractAddr, randListInfo, fpSk, startHeight, startHeight)
 		if err != nil {
 			log.Fatalf("Failed to submit finality signature: %v", err)
 		}
