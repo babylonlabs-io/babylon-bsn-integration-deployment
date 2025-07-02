@@ -1,4 +1,14 @@
 services:
+  foundry-anvil:
+    container_name: foundry-anvil
+    image: babylonlabs-io/foundry-anvil:latest
+    ports:
+      - "8545:8545"
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.20
+    restart: unless-stopped
+    
   tmkms:
     container_name: tmkms
     image: babylonlabs-io/tmkms:latest
