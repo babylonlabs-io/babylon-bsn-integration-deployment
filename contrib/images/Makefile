@@ -35,4 +35,8 @@ tmkms:
 	docker build --platform "linux/amd64" --tag babylonlabs-io/tmkms:latest -f tmkms/Dockerfile \
 		$(shell git rev-parse --show-toplevel)/contrib/images/tmkms
 
-.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi ibcsim-bcd ibcsim-bcd-rmi tmkms
+foundry-anvil:
+	docker build --platform "linux/amd64" --tag babylonlabs-io/foundry-anvil:latest -f foundry-anvil/Dockerfile \
+		$(shell git rev-parse --show-toplevel)/contrib/images/foundry-anvil
+
+.PHONY: all btcdsim btcdsim-rmi bitcoindsim bitcoindsim-rmi ibcsim-gaia ibcsim-gaia-rmi ibcsim-bcd ibcsim-bcd-rmi tmkms foundry-anvil
