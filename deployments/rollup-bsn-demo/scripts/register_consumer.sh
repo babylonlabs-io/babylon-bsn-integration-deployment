@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+# Load .env if present
+[ -f .env ] && source .env
+
+# Default values
+BBN_CHAIN_ID="${BBN_CHAIN_ID:-chain-test}"
+CONSUMER_ID="${CONSUMER_ID:-31337}"
+HOME_DIR="${HOME_DIR:-/babylondhome}"
+ADMIN_KEY="${ADMIN_KEY:-test-spending-key}"
+CONSUMER_NAME="${CONSUMER_NAME:-anvil-consumer}"
+CONSUMER_DESC="${CONSUMER_DESC:-"local Anvil Consumer"}"
+
+# Get finality contract address
+if [ -n "$1" ]; then
+  FINALITY_CONTRACT_ADDR="$1"
+elif [ -z "$FINALITY_CONTRACT_ADDR" ]; then
+  echo "❌ Missing FINALITY_CONTRACT_ADDR (arg or .env)"
+  exit 1
+fi
+
+echo "🔗 Registering consumer '$CONSUMER_ID'..."
+
+REGISTER_CMD="/bin/babylond --home $HOME_DIR tx btcstkconsumer register-consumer \
+  $CONSUMER_ID \"$CONSUMER_NAME\" \"$CONSUMER_DESC\" $MAX_MULTI_STAKED_FPS $FINALITY_CONTRACT_ADDR \
+  --from $ADMIN_KEY --chain-id $BBN_CHAIN_ID --keyring-backend test \
+  --fees 100000ubbn --output json -y"
+
+REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
+
+echo "✅ Consumer registered"
+echo "$REGISTER_OUTPUT" | jq -r '.txhash // .code // "No TX hash"'
+
+sleep 5
+
+# 📝 Query tips:
+# To list all registered consumers:
+# docker exec babylondnode0 /bin/sh -c "/bin/babylond query btcstkconsumer registered-consumers --output json"

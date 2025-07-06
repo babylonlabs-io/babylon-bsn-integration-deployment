@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 RUN apt-get update -y \
   && apt-get install -y curl bash ca-certificates libssl-dev libcurl4 openssl git \

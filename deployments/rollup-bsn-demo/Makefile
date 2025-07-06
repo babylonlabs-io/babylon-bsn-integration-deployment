@@ -40,5 +40,3 @@ stop-deployment:
 	rm -rf $(CURDIR)/.testnets
 
 run-demo: start-deployment
-	@echo "🚀 Running Rollup BSN Demo..."
-	./demo.sh
