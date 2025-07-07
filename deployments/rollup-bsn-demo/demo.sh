@@ -70,7 +70,7 @@ echo ""
 echo "📋 Step 1: Deploying finality contract..."
 
 echo "  → Storing contract WASM..."
-STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
+STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/finality.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $STORE_CMD"
 STORE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$STORE_CMD")
 echo "  → Output: $STORE_OUTPUT"
@@ -390,7 +390,7 @@ for ((block_height=start_height; block_height<start_height+num_finality_sigs; bl
     verification_success=false
     for verification_attempt in {1..5}; do
         echo "    → Verification attempt $verification_attempt/5..."
-        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash "$block_hash_hex" '{block_voters: {height: $height, hash: $hash}}')
+        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash_hex "$block_hash_hex" '{block_voters: {height: $height, hash_hex: $hash_hex}}')
         VERIFY_SIG_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$verify_msg' --output json"
         VERIFY_SIG_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_SIG_CMD")
         
