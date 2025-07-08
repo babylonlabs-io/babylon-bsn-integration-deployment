@@ -23,17 +23,14 @@ docker run --rm -v $(pwd)/.testnets:/data babylonlabs-io/babylond \
 mkdir -p .testnets/bitcoin
 mkdir -p .testnets/vigilante
 mkdir -p .testnets/btc-staker
-mkdir -p .testnets/finality-provider
 mkdir -p .testnets/consumer-fp
-mkdir -p .testnets/eotsmanager
-mkdir -p .testnets/consumer-eotsmanager
 mkdir -p .testnets/covenant-emulator
 mkdir -p .testnets/covenant-signer
+mkdir -p .testnets/babylon-eots
+mkdir -p .testnets/anvil-eots
 
 cp artifacts/vigilante.yml .testnets/vigilante/vigilante.yml
 cp artifacts/stakerd.conf .testnets/btc-staker/stakerd.conf
-cp artifacts/fpd.conf .testnets/finality-provider/fpd.conf
-cp artifacts/eotsd.conf .testnets/eotsmanager/eotsd.conf
 cp artifacts/covd.conf .testnets/covenant-emulator/covd.conf
 cp -R artifacts/covenant-emulator-keyring .testnets/covenant-emulator/keyring-test
 cp artifacts/covenant-signer.toml .testnets/covenant-signer/config.toml
@@ -41,5 +38,13 @@ cp -R artifacts/covenant-signer-keyring .testnets/covenant-signer/keyring-test
 
 # copy contracts
 cp -R artifacts/contracts .testnets/node0/contracts
+
+# Copy the eots_start.sh script to the babylon-eots directory
+cp ./container-entrypoints/eots_start.sh .testnets/babylon-eots/eots_start.sh
+cp artifacts/babylon-eotsd.conf .testnets/babylon-eots/eotsd.conf
+
+# Copy the eots_start.sh script to the anvil-eots directory
+cp ./container-entrypoints/eots_start.sh .testnets/anvil-eots/eots_start.sh
+cp artifacts/anvil-eotsd.conf .testnets/anvil-eots/eotsd.conf
 
 chmod -R 777 .testnets
