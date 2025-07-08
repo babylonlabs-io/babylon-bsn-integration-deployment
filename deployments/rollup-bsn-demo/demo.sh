@@ -7,8 +7,46 @@ sleep 10 # wait for containers to be ready (cov emulator takes a while to start)
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="consumer-id"
 
+# 🔥 GAS TRACKING INFRASTRUCTURE
+
+# Gas measurement function
+measure_gas() {
+    local tx_hash=$1
+    local operation_name=$2
+    
+    echo "  🔍 Measuring gas for: $operation_name"
+    echo "  → TX Hash: $tx_hash"
+    
+    # Wait for transaction to be processed with retries
+    local max_attempts=10
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        echo "  → Attempt $attempt/$max_attempts: Waiting for transaction to be processed..."
+        sleep 15
+        
+        # Get gas information
+        local gas_used=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q tx $tx_hash --output json | jq '.gas_used'")
+        local height=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q tx $tx_hash --output json | jq '.height'")
+        
+        # Check if transaction is processed (height > 0 and gas_used > 0)
+        if [ "$height" != "0" ] && [ "$gas_used" != "null" ] && [ "$gas_used" != "0" ]; then
+            echo "  🔥 GAS USED: $gas_used units (Block: $height)"
+            echo "$gas_used"
+            return 0
+        else
+            echo "  → Still processing... (Height: $height, Gas: $gas_used)"
+        fi
+        
+        attempt=$((attempt + 1))
+    done
+    
+    echo "  ⚠️ Could not determine gas usage after $max_attempts attempts"
+    echo "0"
+}
+
 echo "🚀 Starting Rollup BSN Demo"
-echo "=================================================="
+echo "============================="
 
 # Build the crypto operations tool first
 echo "🔧 Building crypto operations tool..."
@@ -32,21 +70,26 @@ echo ""
 echo "📋 Step 1: Deploying finality contract..."
 
 echo "  → Storing contract WASM..."
-STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/op_finality_gadget.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.3 --fees 1000000ubbn --output json -y"
+STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/finality.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $STORE_CMD"
 STORE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$STORE_CMD")
 echo "  → Output: $STORE_OUTPUT"
 
-sleep 10
+# Extract transaction hash and measure gas
+STORE_TX_HASH=$(echo "$STORE_OUTPUT" | jq -r '.txhash')
+measure_gas "$STORE_TX_HASH" "Store Contract WASM"
+echo "  ✅ Contract WASM stored successfully!"
 
 echo "  → Instantiating contract..."
 INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
-INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --label 'finality' --admin $admin --from test-spending-key --output json -y"
+INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --label 'finality' --admin $admin --from test-spending-key --output json -y"
 echo "  → Command: $INSTANTIATE_CMD"
 INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
 echo "  → Output: $INSTANTIATE_OUTPUT"
 
-sleep 10
+# Extract transaction hash and measure gas
+INSTANTIATE_TX_HASH=$(echo "$INSTANTIATE_OUTPUT" | jq -r '.txhash')
+measure_gas "$INSTANTIATE_TX_HASH" "Instantiate Contract"
 
 # Extract contract address
 finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
@@ -59,12 +102,14 @@ echo "  ✅ Finality contract deployed at: $finalityContractAddr"
 echo ""
 echo "🔗 Step 2: Registering consumer chain..."
 
-REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn --output json -y"
+REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $REGISTER_CMD"
 REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
 echo "  → Output: $REGISTER_OUTPUT"
 
-sleep 10
+# Extract transaction hash and measure gas
+REGISTER_TX_HASH=$(echo "$REGISTER_OUTPUT" | jq -r '.txhash')
+measure_gas "$REGISTER_TX_HASH" "Register Consumer"
 echo "  ✅ Consumer '$CONSUMER_ID' registered successfully"
 
 ###############################
@@ -111,13 +156,14 @@ bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
 sleep 15
 
 # Create Babylon FP on-chain
-BBN_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn --output json -y"
+BBN_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $BBN_FP_CMD"
 BBN_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$BBN_FP_CMD")
 echo "  → Output: $BBN_FP_OUTPUT"
 
-sleep 15
-
+# Extract transaction hash and measure gas
+BBN_FP_TX_HASH=$(echo "$BBN_FP_OUTPUT" | jq -r '.txhash')
+measure_gas "$BBN_FP_TX_HASH" "Create Babylon Finality Provider"
 echo "  ✅ Babylon FP created successfully"
 
 echo "  → Creating Consumer Finality Provider..."
@@ -127,13 +173,14 @@ consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
 consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
 
 # Create Consumer FP on-chain (note the --consumer-id flag)
-CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas-prices=1ubbn --output json -y"
+CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $CONSUMER_FP_CMD"
 CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$CONSUMER_FP_CMD")
 echo "  → Output: $CONSUMER_FP_OUTPUT"
 
-sleep 15
-
+# Extract transaction hash and measure gas
+CONSUMER_FP_TX_HASH=$(echo "$CONSUMER_FP_OUTPUT" | jq -r '.txhash')
+measure_gas "$CONSUMER_FP_TX_HASH" "Create Consumer Finality Provider"
 echo "  ✅ Consumer FP created successfully"
 
 # Verify FPs were created
@@ -202,8 +249,8 @@ echo "🎲 Step 7a: Generating and committing public randomness..."
 
 # Configure parameters for crypto operations
 start_height=1
-num_pub_rand=1000  # Commit randomness for 1000 blocks
-num_finality_sigs=10  # Submit finality signatures for first 10 blocks
+num_pub_rand=50000  # Commit randomness for 50,000 blocks (similar to mainnet)
+num_finality_sigs=5  # Submit finality signatures for first 5 blocks
 
 echo "  → Using crypto-ops to generate randomness (crypto-only)..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
@@ -248,12 +295,17 @@ commit_msg=$(jq -n \
   }')
 
 # Submit to finality contract using wasm execute
-COMMIT_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$commit_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json"
+COMMIT_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$commit_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn -y --output json"
 echo "  → Command: $COMMIT_CMD"
 COMMIT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$COMMIT_CMD")
 echo "  → Output: $COMMIT_OUTPUT"
 
-sleep 8
+# Extract transaction hash and measure gas
+COMMIT_TX_HASH=$(echo "$COMMIT_OUTPUT" | jq -r '.txhash')
+echo "  → Commit TX Hash: $COMMIT_TX_HASH"
+
+# Measure gas consumption
+measure_gas "$COMMIT_TX_HASH" "Public Randomness Commitment"
 
 # Verify the commitment was stored
 echo "  → Verifying commitment was stored..."
@@ -319,12 +371,16 @@ for ((block_height=start_height; block_height<start_height+num_finality_sigs; bl
       }')
     
     # Submit to finality contract using wasm execute
-    FINALITY_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$finality_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas 500000 --fees 100000ubbn -y --output json"
+    FINALITY_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$finality_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn -y --output json"
     FINALITY_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$FINALITY_CMD")
     echo "    → Submission result: $FINALITY_OUTPUT"
     
-    # Verify the signature was recorded
-    sleep 8  # Increased delay for transaction processing
+    # Extract transaction hash and measure gas
+    FINALITY_TX_HASH=$(echo "$FINALITY_OUTPUT" | jq -r '.txhash')
+    echo "    → Finality TX Hash: $FINALITY_TX_HASH"
+    
+    # Measure gas consumption for this finality signature
+    measure_gas "$FINALITY_TX_HASH" "Finality Signature Block $block_height"
     echo "    → Verifying finality signature was recorded..."
     
     # Use the hex string directly from Go output (much simpler!)
@@ -334,7 +390,7 @@ for ((block_height=start_height; block_height<start_height+num_finality_sigs; bl
     verification_success=false
     for verification_attempt in {1..5}; do
         echo "    → Verification attempt $verification_attempt/5..."
-        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash "$block_hash_hex" '{block_voters: {height: $height, hash: $hash}}')
+        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash_hex "$block_hash_hex" '{block_voters: {height: $height, hash_hex: $hash_hex}}')
         VERIFY_SIG_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$verify_msg' --output json"
         VERIFY_SIG_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_SIG_CMD")
         
@@ -385,3 +441,4 @@ echo "✅ Finality providers created: $bbn_fp_count Babylon + $consumer_fp_count
 echo "✅ BTC delegation active: $btcTxHash ($activeDelegations active)"
 echo "✅ Public randomness committed: blocks $start_height-$((start_height + num_pub_rand - 1)) ($num_pub_rand total)"
 echo "✅ Finality signatures processed: $successful_sigs/$num_finality_sigs blocks (blocks $start_height-$((start_height + num_finality_sigs - 1)))"
+
