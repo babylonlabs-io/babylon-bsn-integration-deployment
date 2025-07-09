@@ -28,6 +28,8 @@ mkdir -p .testnets/covenant-emulator
 mkdir -p .testnets/covenant-signer
 mkdir -p .testnets/babylon-eots
 mkdir -p .testnets/anvil-eots
+mkdir -p .testnets/babylon-fp
+mkdir -p .testnets/anvil-fp
 
 cp artifacts/vigilante.yml .testnets/vigilante/vigilante.yml
 cp artifacts/stakerd.conf .testnets/btc-staker/stakerd.conf
@@ -46,5 +48,22 @@ cp artifacts/babylon-eotsd.conf .testnets/babylon-eots/eotsd.conf
 # Copy the eots_start.sh script to the anvil-eots directory
 cp ./container-entrypoints/eots_start.sh .testnets/anvil-eots/eots_start.sh
 cp artifacts/anvil-eotsd.conf .testnets/anvil-eots/eotsd.conf
+
+# Copy the fp_start.sh script to the babylon-fp directory
+cp ./container-entrypoints/babylon_fp_start.sh .testnets/babylon-fp/fp_start.sh
+cp artifacts/babylon-fp.conf .testnets/babylon-fp/fpd.conf
+cp ./scripts/fund-address.sh .testnets/babylon-fp/fund-address.sh
+cp ./scripts/print-babylon-fp.sh .testnets/babylon-fp/print-babylon-fp.sh
+cp ./scripts/delegate-btc-babylon-fp.sh .testnets/babylon-fp/delegate-btc-babylon-fp.sh
+
+
+# Copy the fp_start.sh script to the anvil-fp directory
+cp ./container-entrypoints/anvil_fp_start.sh .testnets/anvil-fp/fp_start.sh
+cp ./scripts/fund-address.sh .testnets/anvil-fp/fund-address.sh
+cp ./scripts/deploy_finality_contract.sh .testnets/anvil-fp/deploy_finality_contract.sh
+cp artifacts/anvil-fp.conf .testnets/anvil-fp/fpd.conf
+cp ./scripts/print-anvil-fp.sh .testnets/anvil-fp/print-anvil-fp.sh
+cp ./scripts/delegate-btc-anvil-fp.sh .testnets/anvil-fp/delegate-btc-anvil-fp.sh
+cp ./scripts/register-consumer.sh .testnets/anvil-fp/register-consumer.sh
 
 chmod -R 777 .testnets

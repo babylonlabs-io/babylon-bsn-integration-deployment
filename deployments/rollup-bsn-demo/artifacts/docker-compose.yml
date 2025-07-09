@@ -237,6 +237,47 @@ services:
       - covenant-signer
     restart: unless-stopped
 
+  babylon-fp:
+    container_name: babylon-fp
+    image: babylonlabs-io/finality-provider
+    entrypoint: /bin/sh -c "apk add --no-cache docker-cli && exec /home/babylonFpHome/fp_start.sh"
+    environment:
+      - FP_HOME=/home/babylonFpHome
+      - FP_KEY_NAME=babylon-key
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.18
+    ports:
+      - "45661:45661"
+    volumes:
+      - ../.testnets/babylon-fp:/home/babylonFpHome
+      - ../.testnets/babylon-eots:/home/babylonEotsHome
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - babylondnode0
+    user: root 
+
+  anvil-fp:
+    container_name: anvil-fp
+    image: babylonlabs-io/finality-provider
+    entrypoint: /bin/sh -c "apk add --no-cache docker-cli && exec /home/anvilFpHome/fp_start.sh"
+    environment:
+      - FP_HOME=/home/anvilFpHome
+      - FP_KEY_NAME=anvil-key
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.19
+    ports:
+      - "45662:45662"
+    volumes:
+      - ../.testnets/anvil-fp:/home/anvilFpHome
+      - ../.testnets/anvil-eots:/home/anvilEotsHome
+      - ../.testnets/babylon-fp:/home/babylonFpHome
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - babylondnode0
+    user: root 
+
   electrs:
     image: mempool/electrs:v3.1.0
     container_name: electrs
