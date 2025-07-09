@@ -81,7 +81,7 @@ measure_gas "$STORE_TX_HASH" "Store Contract WASM"
 echo "  ✅ Contract WASM stored successfully!"
 
 echo "  → Instantiating contract..."
-INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"consumer_id\":\"$CONSUMER_ID\",\"is_enabled\":true}"
+INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"bsn_id\":\"$CONSUMER_ID\"}"
 INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --label 'finality' --admin $admin --from test-spending-key --output json -y"
 echo "  → Command: $INSTANTIATE_CMD"
 INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
@@ -250,7 +250,7 @@ echo "🎲 Step 7a: Generating and committing public randomness..."
 # Configure parameters for crypto operations
 start_height=1
 num_pub_rand=50000  # Commit randomness for 50,000 blocks (similar to mainnet)
-num_finality_sigs=5  # Submit finality signatures for first 5 blocks
+num_finality_sigs=3  # Submit finality signatures for first 5 blocks
 
 echo "  → Using crypto-ops to generate randomness (crypto-only)..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
