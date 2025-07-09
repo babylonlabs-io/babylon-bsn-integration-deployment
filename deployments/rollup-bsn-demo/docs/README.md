@@ -25,8 +25,8 @@ The demo consists of the following running services:
 
 - **Three local blockchains:**  
   - Babylon chain  
-  - Anvil L2 rollup  
-  - Bitcoin regtest node  
+  - Anvil chain 
+  - Bitcoin chain
 
 - **Two EOTS services:**  
   - One for Babylon Finality Provider  

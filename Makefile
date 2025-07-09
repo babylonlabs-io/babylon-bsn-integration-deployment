@@ -4,7 +4,7 @@ run-cosmos-bsn-demo:
 
 run-rollup-bsn-demo:
 	@$(MAKE) -C $(CURDIR)/deployments/rollup-bsn-demo \
-		start-deployment
+		run-demo
 
 stop-cosmos-bsn-demo:
 	@$(MAKE) -C $(CURDIR)/deployments/cosmos-bsn-demo \

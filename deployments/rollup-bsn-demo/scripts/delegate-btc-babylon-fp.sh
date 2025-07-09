@@ -22,7 +22,7 @@ if [[ -z "$BABYLON_FP_BTC_PK" ]]; then
 fi
 
 echo
-echo "₿ Step 5: Creating BTC delegation..."
+echo "Creating BTC delegation..."
 echo "  → Staking $STAKING_AMOUNT sats for $STAKING_TIME blocks"
 
 # Get a BTC address from available outputs

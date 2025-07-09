@@ -44,27 +44,17 @@ cp -R artifacts/covenant-signer-keyring .testnets/covenant-signer/keyring-test
 # Copy smart contracts to node configuration directory
 cp -R artifacts/contracts .testnets/node0/contracts
 
-# Copy EOTS start scripts and configurations
-cp ./container-entrypoints/eots_start.sh .testnets/babylon-eots/eots_start.sh
+# Copy EOTS configurations
 cp artifacts/babylon-eotsd.conf .testnets/babylon-eots/eotsd.conf
-cp ./container-entrypoints/eots_start.sh .testnets/anvil-eots/eots_start.sh
 cp artifacts/anvil-eotsd.conf .testnets/anvil-eots/eotsd.conf
 
 # Copy Finality Provider start scripts, configs and helper scripts for Babylon FP
-cp ./container-entrypoints/babylon_fp_start.sh .testnets/babylon-fp/fp_start.sh
 cp artifacts/babylon-fp.conf .testnets/babylon-fp/fpd.conf
-cp ./scripts/fund-address.sh .testnets/babylon-fp/fund-address.sh
-cp ./scripts/print-babylon-fp.sh .testnets/babylon-fp/print-babylon-fp.sh
-cp ./scripts/delegate-btc-babylon-fp.sh .testnets/babylon-fp/delegate-btc-babylon-fp.sh
+cp -R artifacts/babylon-fp-keyring .testnets/babylon-fp/keyring-test
 
 # Copy Finality Provider start scripts, configs and helper scripts for Anvil FP
-cp ./container-entrypoints/anvil_fp_start.sh .testnets/anvil-fp/fp_start.sh
-cp ./scripts/fund-address.sh .testnets/anvil-fp/fund-address.sh
-cp ./scripts/deploy-finality-contract.sh .testnets/anvil-fp/deploy-finality-contract.sh
 cp artifacts/anvil-fp.conf .testnets/anvil-fp/fpd.conf
-cp ./scripts/print-anvil-fp.sh .testnets/anvil-fp/print-anvil-fp.sh
-cp ./scripts/delegate-btc-anvil-fp.sh .testnets/anvil-fp/delegate-btc-anvil-fp.sh
-cp ./scripts/register-consumer.sh .testnets/anvil-fp/register-consumer.sh
+cp -R artifacts/anvil-fp-keyring .testnets/anvil-fp/keyring-test
 
 # Ensure all config files and directories are writable
 chmod -R 777 .testnets

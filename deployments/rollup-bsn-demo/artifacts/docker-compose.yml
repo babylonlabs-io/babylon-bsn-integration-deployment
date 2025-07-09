@@ -177,10 +177,7 @@ services:
   babylon-eots:
     container_name: babylon-eots
     image: babylonlabs-io/finality-provider
-    entrypoint: /home/babylonEotsHome/eots_start.sh
-    environment:
-      - EOTS_HOME=/home/babylonEotsHome
-      - EOTS_KEY_NAME=babylon-key
+    command: ["eotsd", "start", "--home", "/home/babylonEotsHome", "--rpc-listener", "0.0.0.0:15813"]
     networks:
       localnet:
         ipv4_address: 192.168.10.14
@@ -195,15 +192,12 @@ services:
   anvil-eots:
     container_name: anvil-eots
     image: babylonlabs-io/finality-provider
-    entrypoint: /home/anvilEotsHome/eots_start.sh
-    environment:
-      - EOTS_HOME=/home/anvilEotsHome
-      - EOTS_KEY_NAME=anvil-key
+    command: ["eotsd", "start", "--home", "/home/anvilEotsHome", "--rpc-listener", "0.0.0.0:15817"]
     networks:
       localnet:
         ipv4_address: 192.168.10.15
     ports:
-      - "15817:15813"
+      - "15817:15817"
     volumes:
       - ../.testnets/anvil-eots:/home/anvilEotsHome
     depends_on:
@@ -240,10 +234,7 @@ services:
   babylon-fp:
     container_name: babylon-fp
     image: babylonlabs-io/finality-provider
-    entrypoint: /bin/sh -c "apk add --no-cache docker-cli && exec /home/babylonFpHome/fp_start.sh"
-    environment:
-      - FP_HOME=/home/babylonFpHome
-      - FP_KEY_NAME=babylon-key
+    command: ["fpd", "start", "--home", "/home/babylonFpHome", "--rpc-listener", "127.0.0.1:45661"]
     networks:
       localnet:
         ipv4_address: 192.168.10.18
@@ -251,19 +242,15 @@ services:
       - "45661:45661"
     volumes:
       - ../.testnets/babylon-fp:/home/babylonFpHome
-      - ../.testnets/babylon-eots:/home/babylonEotsHome
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - babylondnode0
+      - babylon-eots
     user: root 
 
   anvil-fp:
     container_name: anvil-fp
     image: babylonlabs-io/finality-provider
-    entrypoint: /bin/sh -c "apk add --no-cache docker-cli && exec /home/anvilFpHome/fp_start.sh"
-    environment:
-      - FP_HOME=/home/anvilFpHome
-      - FP_KEY_NAME=anvil-key
+    command: ["fpd", "start", "--home", "/home/anvilFpHome", "--rpc-listener", "127.0.0.1:45662"]
     networks:
       localnet:
         ipv4_address: 192.168.10.19
@@ -271,11 +258,9 @@ services:
       - "45662:45662"
     volumes:
       - ../.testnets/anvil-fp:/home/anvilFpHome
-      - ../.testnets/anvil-eots:/home/anvilEotsHome
-      - ../.testnets/babylon-fp:/home/babylonFpHome
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - babylondnode0
+      - anvil-eots
     user: root 
 
   electrs:
