@@ -56,7 +56,21 @@ cd ../
 echo "  ✅ Crypto operations tool built successfully"
 
 # Get admin address for contract instantiation
-admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
+echo "  → Getting admin address..."
+ADMIN_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to get admin address"
+    echo "  Error: $ADMIN_OUTPUT"
+    exit 1
+fi
+
+admin=$(echo "$ADMIN_OUTPUT" | jq -r '.address')
+if [ "$admin" = "null" ] || [ -z "$admin" ]; then
+    echo "  ❌ Failed to parse admin address"
+    echo "  Query output: $ADMIN_OUTPUT"
+    exit 1
+fi
+
 echo "Using admin address: $admin"
 
 sleep 5
@@ -92,7 +106,21 @@ INSTANTIATE_TX_HASH=$(echo "$INSTANTIATE_OUTPUT" | jq -r '.txhash')
 measure_gas "$INSTANTIATE_TX_HASH" "Instantiate Contract"
 
 # Extract contract address
-finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
+echo "  → Getting contract address..."
+CONTRACT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to get contract address"
+    echo "  Error: $CONTRACT_OUTPUT"
+    exit 1
+fi
+
+finalityContractAddr=$(echo "$CONTRACT_OUTPUT" | jq -r '.contracts[0]')
+if [ "$finalityContractAddr" = "null" ] || [ -z "$finalityContractAddr" ]; then
+    echo "  ❌ Failed to parse contract address"
+    echo "  Query output: $CONTRACT_OUTPUT"
+    exit 1
+fi
+
 echo "  ✅ Finality contract deployed at: $finalityContractAddr"
 
 ###############################
@@ -122,11 +150,21 @@ echo "🔐 Step 3: Generating cryptographic keys..."
 echo "  → Generating BTC key pairs for finality providers..."
 
 # Generate key pairs using the Go tool and parse JSON output
+echo "  → Generating Babylon FP keypair..."
 bbn_fp_json=$(./crypto-ops generate-keypair)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to generate Babylon FP keypair"
+    exit 1
+fi
 bbn_btc_pk=$(echo "$bbn_fp_json" | jq -r '.public_key')
 bbn_btc_sk=$(echo "$bbn_fp_json" | jq -r '.private_key')
 
+echo "  → Generating Consumer FP keypair..."
 consumer_fp_json=$(./crypto-ops generate-keypair)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to generate Consumer FP keypair"
+    exit 1
+fi
 consumer_btc_pk=$(echo "$consumer_fp_json" | jq -r '.public_key')
 consumer_btc_sk=$(echo "$consumer_fp_json" | jq -r '.private_key')
 
@@ -144,13 +182,32 @@ echo ""
 echo "👥 Step 4: Creating finality providers on-chain..."
 
 # Get admin address for PoP generation
-admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json | jq -r '.address'")
+echo "  → Getting admin address for PoP generation..."
+ADMIN_POP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to get admin address for PoP"
+    echo "  Error: $ADMIN_POP_OUTPUT"
+    exit 1
+fi
+
+admin=$(echo "$ADMIN_POP_OUTPUT" | jq -r '.address')
+if [ "$admin" = "null" ] || [ -z "$admin" ]; then
+    echo "  ❌ Failed to parse admin address for PoP"
+    echo "  Query output: $ADMIN_POP_OUTPUT"
+    exit 1
+fi
+
 echo "  → Using admin address for PoP: $admin"
 
 echo "  → Creating Babylon Finality Provider..."
 
 # Generate PoP for Babylon FP using crypto-ops
+echo "  → Generating PoP for Babylon FP..."
 bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to generate PoP for Babylon FP"
+    exit 1
+fi
 bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
 
 sleep 15
@@ -169,7 +226,12 @@ echo "  ✅ Babylon FP created successfully"
 echo "  → Creating Consumer Finality Provider..."
 
 # Generate PoP for Consumer FP using crypto-ops
+echo "  → Generating PoP for Consumer FP..."
 consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to generate PoP for Consumer FP"
+    exit 1
+fi
 consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
 
 # Create Consumer FP on-chain (note the --bsn-id flag)
@@ -185,8 +247,39 @@ echo "  ✅ Consumer FP created successfully"
 
 # Verify FPs were created
 echo "  → Verifying finality providers..."
-bbn_fp_count=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers --output json | jq '.finality_providers | length'")
-consumer_fp_count=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstkconsumer finality-providers $CONSUMER_ID --output json | jq '.finality_providers | length'")
+
+# Query Babylon BSN finality providers (no bsn_id defaults to chain ID)
+echo "  → Querying Babylon BSN finality providers..."
+BBN_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to query Babylon BSN finality providers"
+    echo "  Error: $BBN_FP_OUTPUT"
+    exit 1
+fi
+
+bbn_fp_count=$(echo "$BBN_FP_OUTPUT" | jq -r '.finality_providers | length')
+if [ "$bbn_fp_count" = "null" ] || [ -z "$bbn_fp_count" ]; then
+    echo "  ❌ Failed to parse Babylon BSN finality providers count"
+    echo "  Query output: $BBN_FP_OUTPUT"
+    exit 1
+fi
+
+# Query Consumer BSN finality providers by specifying the bsn_id
+echo "  → Querying Consumer BSN finality providers..."
+CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers $CONSUMER_ID --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to query Consumer BSN finality providers"
+    echo "  Error: $CONSUMER_FP_OUTPUT"
+    exit 1
+fi
+
+consumer_fp_count=$(echo "$CONSUMER_FP_OUTPUT" | jq -r '.finality_providers | length')
+if [ "$consumer_fp_count" = "null" ] || [ -z "$consumer_fp_count" ]; then
+    echo "  ❌ Failed to parse Consumer BSN finality providers count"
+    echo "  Query output: $CONSUMER_FP_OUTPUT"
+    exit 1
+fi
+
 echo "  ✅ Babylon finality providers: $bbn_fp_count"
 echo "  ✅ Consumer finality providers: $consumer_fp_count"
 
@@ -224,7 +317,23 @@ echo "⏳ Step 6: Waiting for delegation activation..."
 
 echo "  → Monitoring delegation status..."
 for i in {1..30}; do
-    activeDelegations=$(docker exec babylondnode0 /bin/sh -c 'babylond q btcstaking btc-delegations active -o json | jq ".btc_delegations | length"')
+    DELEGATION_OUTPUT=$(docker exec babylondnode0 /bin/sh -c 'babylond q btcstaking btc-delegations active -o json' 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "    ❌ Attempt $i/30: Failed to query active delegations"
+        echo "    Error: $DELEGATION_OUTPUT"
+        echo "    Retrying in 10 seconds..."
+        sleep 10
+        continue
+    fi
+    
+    activeDelegations=$(echo "$DELEGATION_OUTPUT" | jq '.btc_delegations | length')
+    if [ "$activeDelegations" = "null" ] || [ -z "$activeDelegations" ]; then
+        echo "    ❌ Attempt $i/30: Failed to parse active delegations count"
+        echo "    Query output: $DELEGATION_OUTPUT"
+        echo "    Retrying in 10 seconds..."
+        sleep 10
+        continue
+    fi
     
     if [ "$activeDelegations" -eq 1 ]; then
         echo "  ✅ Delegation activated successfully!"
