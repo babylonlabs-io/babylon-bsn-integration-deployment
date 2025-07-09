@@ -25,6 +25,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// TODO: The following constants are duplicated in both this Go script and demo.sh.
+// Consider consolidating them into a single place.
 const (
 	BBN_CHAIN_ID    = "chain-test"
 	CONSUMER_ID     = "consumer-id"
