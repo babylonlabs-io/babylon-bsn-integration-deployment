@@ -172,8 +172,8 @@ echo "  → Creating Consumer Finality Provider..."
 consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
 consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
 
-# Create Consumer FP on-chain (note the --consumer-id flag)
-CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --consumer-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
+# Create Consumer FP on-chain (note the --bsn-id flag)
+CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --bsn-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
 echo "  → Command: $CONSUMER_FP_CMD"
 CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$CONSUMER_FP_CMD")
 echo "  → Output: $CONSUMER_FP_OUTPUT"
