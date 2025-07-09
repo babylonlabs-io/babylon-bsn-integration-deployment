@@ -24,7 +24,7 @@ if [[ -z "$CONSUMER_FP_BTC_PK" || -z "$BABYLON_FP_BTC_PK" ]]; then
 fi
 
 echo
-echo "₿ Step 5: Creating BTC delegation..."
+echo "Creating BTC delegation..."
 echo "  → Staking $STAKING_AMOUNT sats for $STAKING_TIME blocks"
 
 # Get a BTC address from available outputs
@@ -57,7 +57,7 @@ echo "✅ BTC delegation created successfully"
 echo "   → TX hash: $btcTxHash"
 
 echo
-echo "⏳ Step 6: Waiting for BTC delegation activation..."
+echo "Waiting for BTC delegation activation..."
 
 # Wait and check for delegation activation
 for i in {1..30}; do
