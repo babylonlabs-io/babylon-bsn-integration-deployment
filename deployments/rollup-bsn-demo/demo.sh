@@ -426,7 +426,78 @@ echo "  → Verification result: $VERIFY_OUTPUT"
 echo "  ✅ Public randomness committed successfully for $num_pub_rand blocks!"
 
 echo ""
-echo "✍️ Step 7b: Generating and submitting finality signatures..."
+echo "⏳ Step 7b: Waiting for BTC timestamping..."
+echo "  ℹ️  The finality contract requires public randomness commitments to be BTC-timestamped"
+echo "  ℹ️  before accepting finality signatures. This ensures cryptographic security."
+
+# Query the last public randomness commitment to get its babylon_epoch
+echo "  → Querying last public randomness commitment..."
+query_msg=$(jq -n --arg btc_pk_hex "$fp_pubkey_hex" '{last_pub_rand_commit: {btc_pk_hex: $btc_pk_hex}}')
+LAST_COMMIT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$query_msg' --output json" 2>&1)
+if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to query last public randomness commitment"
+    echo "  Error: $LAST_COMMIT_OUTPUT"
+    exit 1
+fi
+echo "  → Last commit query result: $LAST_COMMIT_OUTPUT"
+
+# Extract the babylon_epoch from the commitment
+committed_epoch=$(echo "$LAST_COMMIT_OUTPUT" | jq -r '.data.babylon_epoch')
+if [ "$committed_epoch" = "null" ] || [ -z "$committed_epoch" ]; then
+    echo "  ❌ Failed to get committed epoch from contract"
+    echo "  Query output: $LAST_COMMIT_OUTPUT"
+    exit 1
+fi
+
+echo "  → Committed randomness epoch: $committed_epoch"
+
+# Wait for this epoch to be finalized by BTC timestamping
+echo "  → Waiting for epoch $committed_epoch to be finalized by BTC timestamping..."
+echo "  → This ensures the cryptographic security of finality signatures"
+max_wait_attempts=60  # Wait up to 10 minutes (60 * 10 seconds)
+wait_attempt=0
+
+while [ $wait_attempt -lt $max_wait_attempts ]; do
+    wait_attempt=$((wait_attempt + 1))
+    
+    # Query Babylon's last finalized epoch using raw-checkpoint-list
+    FINALIZED_EPOCH_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q checkpointing raw-checkpoint-list CKPT_STATUS_FINALIZED --reverse --limit 1 --output json" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "    → Attempt $wait_attempt/$max_wait_attempts: Failed to query finalized epoch, retrying..."
+        echo "    Error: $FINALIZED_EPOCH_OUTPUT"
+        sleep 10
+        continue
+    fi
+    
+    # Extract the epoch number from the most recent finalized checkpoint
+    last_finalized_epoch=$(echo "$FINALIZED_EPOCH_OUTPUT" | jq -r '.raw_checkpoints[0].ckpt.epoch_num // 0')
+    if [ "$last_finalized_epoch" = "null" ] || [ -z "$last_finalized_epoch" ]; then
+        echo "    → Attempt $wait_attempt/$max_wait_attempts: Failed to parse finalized epoch, retrying..."
+        echo "    Query output: $FINALIZED_EPOCH_OUTPUT"
+        sleep 10
+        continue
+    fi
+    
+    echo "    → Attempt $wait_attempt/$max_wait_attempts: Committed epoch=$committed_epoch, Finalized epoch=$last_finalized_epoch"
+    
+    # Check if the committed epoch is now finalized
+    if [ "$last_finalized_epoch" -ge "$committed_epoch" ]; then
+        echo "  ✅ Epoch $committed_epoch has been finalized! (Last finalized: $last_finalized_epoch)"
+        break
+    fi
+    
+    echo "    → Waiting... (need epoch $committed_epoch to be finalized, currently $last_finalized_epoch)"
+    sleep 10
+done
+
+if [ "$last_finalized_epoch" -lt "$committed_epoch" ]; then
+    echo "  ⚠️  Warning: Epoch $committed_epoch not finalized after $((max_wait_attempts * 10)) seconds"
+    echo "  ⚠️  Committed epoch: $committed_epoch, Last finalized: $last_finalized_epoch"
+    echo "  ⚠️  Proceeding anyway - finality signatures may fail..."
+fi
+
+echo ""
+echo "✍️ Step 7c: Generating and submitting finality signatures..."
 
 # Step 7b: Generate and submit finality signatures for multiple blocks
 echo "  → Processing $num_finality_sigs blocks using crypto-only approach..."
