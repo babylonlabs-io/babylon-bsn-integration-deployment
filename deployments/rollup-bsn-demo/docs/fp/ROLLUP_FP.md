@@ -11,6 +11,13 @@ This guide explains how to manually set up the Rollup Finality Provider (FP) as 
 You will initialize and start the EOTS service, configure and start the FP daemon, register the finality provider on-chain, and delegate BTC tokens.
 
 ---
+## Important Version Note
+
+> **Notice:**  
+> The current `main` branch commit of the finality-provider (`ff6b427d4c88bedcf826ee7cdcae06b2a49e4248`) contains a known issue where the OP client improperly depends on the finality provider gadget. This is why this repo is referencing (`b625194767bac645492b7ae5c653ef7aa33a7a86`)
+> For details, please see issue [#503](https://github.com/babylonlabs-io/finality-provider/issues/503).
+
+
 
 ## Step 4: Setup Rollup Finality Provider
 
