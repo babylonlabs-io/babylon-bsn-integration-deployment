@@ -25,7 +25,10 @@ build-covenant-signer:
 build-tmkms:
 	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images tmkms
 
-build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms
+build-foundry-anvil:
+	$(MAKE) -C $(GIT_TOPLEVEL)/contrib/images foundry-anvil
+
+build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms build-foundry-anvil
 
 start-deployment: stop-deployment build-deployment
 	./pre-deployment.sh
@@ -35,7 +38,3 @@ start-deployment: stop-deployment build-deployment
 stop-deployment:
 	$(DOCKER) compose -f artifacts/docker-compose.yml down
 	rm -rf $(CURDIR)/.testnets
-
-run-demo: start-deployment
-	@echo "🚀 Running Rollup BSN Demo..."
-	./demo.sh

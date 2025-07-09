@@ -1,6 +1,10 @@
-# Babylon Integration Deployment
+<p align="center">  
+  <h1>Babylon BSN Integration</h1>  
+</p>
 
-This repository contains artifacts and instructions for setting up and running a Babylon network that integrates with various consumer chains.
+> Complete demonstrations and integrations for Babylon BSNs
+
+This repository contains artifacts and instructions for setting up and running Babylon BSN integrations with various chains.
 
 ## Prerequisites
 
@@ -14,11 +18,18 @@ This repository contains artifacts and instructions for setting up and running a
    git submodule init && git submodule update
    ```
 
-## Deployment Scenarios
+## 🚀 Quick Start - Rollup BSN Demo
 
-Scenarios are located in the [deployments](deployments/) directory:
+To run the complete Rollup BSN demonstration:
 
-- [Rollup BTC Staking Demo](deployments/rollup-btc-staking-demo): Babylon network with BTC Staking integration for rollup chains using smart contracts.
-- [Finality Gadget Integration with OP chain]: The guides linked below provide instructions on how to integrate the Babylon Bitcoin Staking protocol with an OP-Stack chain:
-  - [Deploy an OP-Stack Chain with finality gadget](https://github.com/Snapchain/op-chain-deployment)
-  - [Integrate finality gadget into your OP-Stack Chain](https://github.com/Snapchain/babylon-deployment)
+```bash
+make run-rollup-bsn-demo
+```
+
+For detailed information about the demo components and setup, visit:  
+**[Rollup BSN Demo Documentation](deployments/rollup-bsn-demo/README.md)**
+
+## 📋 BSN Integration Status
+
+- [x] **Rollup BSN** - Complete demo with finality providers and BTC staking
+- [ ] **Cosmos BSN** - Coming soon
