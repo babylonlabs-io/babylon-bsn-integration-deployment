@@ -1,1 +1,1 @@
-0a5b209b9e1e33daf82dbf0024e065c5519d23706a120bd5c123cd28289ea69f  op_finality_gadget.wasm
+d60fe6249d6e10d879dc3df07e5e68a59702b095  finality.wasm
