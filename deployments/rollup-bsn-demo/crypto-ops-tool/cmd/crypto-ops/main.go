@@ -15,11 +15,12 @@ import (
 	"os/exec"
 	"strings"
 
-	appparams "github.com/babylonlabs-io/babylon/v4/app/params"
-	"github.com/babylonlabs-io/babylon/v4/crypto/eots"
-	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
-	bbn "github.com/babylonlabs-io/babylon/v4/types"
-	ftypes "github.com/babylonlabs-io/babylon/v4/x/finality/types"
+	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
+	"github.com/babylonlabs-io/babylon/v3/app/signingcontext"
+	"github.com/babylonlabs-io/babylon/v3/crypto/eots"
+	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
+	bbn "github.com/babylonlabs-io/babylon/v3/types"
+	ftypes "github.com/babylonlabs-io/babylon/v3/x/finality/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/cometbft/cometbft/crypto/merkle"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/crypto"
@@ -181,15 +182,13 @@ func ConvertFromSerializable(serializable *SerializableRandListInfo) (*datagen.R
 	return randListInfo, nil
 }
 
-// Generate Proof of Possession exactly like datagen.NewPoPBTC
 func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (*ProofOfPossession, error) {
-	// Use datagen.NewPoPBTC exactly like the reference implementation
-	pop, err := datagen.NewPoPBTC(addr, btcSK)
+	signingContext := signingcontext.FpPopContextV0(BBN_CHAIN_ID, appparams.AccBTCStaking.String())
+	pop, err := datagen.NewPoPBTC(signingContext, addr, btcSK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate PoP: %w", err)
 	}
 
-	// Convert PoP to hex string exactly like the reference code does
 	popHex, err := pop.ToHexStr()
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert PoP to hex: %w", err)
@@ -211,8 +210,8 @@ func commitPublicRandomness(r *mathrand.Rand, contractAddr string, consumerFpSk 
 	// Use the provided parameters
 	commitStartHeight := startHeight
 
-	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
-	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, commitStartHeight, numPubRand)
+	signingContext := signingcontext.FpRandCommitContextV0(BBN_CHAIN_ID, appparams.AccFinality.String())
+	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, signingContext, commitStartHeight, numPubRand)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate public randomness list: %v", err)
 	}
@@ -529,8 +528,8 @@ func generatePublicRandomnessCommitment(r *mathrand.Rand, consumerFpSk *btcec.Pr
 	btcPK := consumerFpSk.PubKey()
 	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
 
-	// Generate the message exactly like datagen.GenRandomMsgCommitPubRandList
-	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, startHeight, numPubRand)
+	signingContext := signingcontext.FpRandCommitContextV0(BBN_CHAIN_ID, appparams.AccFinality.String())
+	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, signingContext, startHeight, numPubRand)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to generate public randomness list: %v", err)
 	}
