@@ -1,1 +1,1 @@
-d60fe6249d6e10d879dc3df07e5e68a59702b095  finality.wasm
+be6d95a51d228e71f5dcd194b44abd1de0a4970c  finality.wasm

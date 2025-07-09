@@ -6,6 +6,7 @@ sleep 10 # wait for containers to be ready (cov emulator takes a while to start)
 
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="consumer-id"
+MIN_PUB_RAND=100  # Minimum number of public randomness commitments required
 
 # 🔥 GAS TRACKING INFRASTRUCTURE
 
@@ -95,7 +96,8 @@ measure_gas "$STORE_TX_HASH" "Store Contract WASM"
 echo "  ✅ Contract WASM stored successfully!"
 
 echo "  → Instantiating contract..."
-INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"bsn_id\":\"$CONSUMER_ID\"}"
+echo "  → Using min_pub_rand=$MIN_PUB_RAND (minimum randomness commitments required)"
+INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"bsn_id\":\"$CONSUMER_ID\",\"min_pub_rand\":$MIN_PUB_RAND}"
 INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --label 'finality' --admin $admin --from test-spending-key --output json -y"
 echo "  → Command: $INSTANTIATE_CMD"
 INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
