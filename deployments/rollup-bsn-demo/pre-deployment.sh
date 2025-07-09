@@ -1,7 +1,9 @@
 #!/bin/sh
 
-# Create new directory that will hold node and services' configuration
+# Create directory to hold node and services configuration with write permission
 mkdir -p .testnets && chmod o+w .testnets
+
+# Initialize Babylon testnet with custom parameters and output config to .testnets
 docker run --rm -v $(pwd)/.testnets:/data babylonlabs-io/babylond \
     babylond testnet --v 2 -o /data \
     --starting-ip-address 192.168.10.2 --keyring-backend=test \
@@ -17,9 +19,9 @@ docker run --rm -v $(pwd)/.testnets:/data babylonlabs-io/babylond \
     --covenant-quorum 1 \
     --activation-height 1 \
     --unbonding-time 5 \
-    --covenant-pks "2d4ccbe538f846a750d82a77cd742895e51afcf23d86d05004a356b783902748" # should be updated if `covenant-keyring` dir is changed`
+    --covenant-pks "2d4ccbe538f846a750d82a77cd742895e51afcf23d86d05004a356b783902748" # Update if `covenant-keyring` directory changes
 
-# Create separate subpaths for each component and copy relevant configuration
+# Create subdirectories for each component's configuration
 mkdir -p .testnets/bitcoin
 mkdir -p .testnets/vigilante
 mkdir -p .testnets/btc-staker
@@ -31,6 +33,7 @@ mkdir -p .testnets/anvil-eots
 mkdir -p .testnets/babylon-fp
 mkdir -p .testnets/anvil-fp
 
+# Copy component-specific configuration files and keyrings
 cp artifacts/vigilante.yml .testnets/vigilante/vigilante.yml
 cp artifacts/stakerd.conf .testnets/btc-staker/stakerd.conf
 cp artifacts/covd.conf .testnets/covenant-emulator/covd.conf
@@ -38,32 +41,30 @@ cp -R artifacts/covenant-emulator-keyring .testnets/covenant-emulator/keyring-te
 cp artifacts/covenant-signer.toml .testnets/covenant-signer/config.toml
 cp -R artifacts/covenant-signer-keyring .testnets/covenant-signer/keyring-test
 
-# copy contracts
+# Copy smart contracts to node configuration directory
 cp -R artifacts/contracts .testnets/node0/contracts
 
-# Copy the eots_start.sh script to the babylon-eots directory
+# Copy EOTS start scripts and configurations
 cp ./container-entrypoints/eots_start.sh .testnets/babylon-eots/eots_start.sh
 cp artifacts/babylon-eotsd.conf .testnets/babylon-eots/eotsd.conf
-
-# Copy the eots_start.sh script to the anvil-eots directory
 cp ./container-entrypoints/eots_start.sh .testnets/anvil-eots/eots_start.sh
 cp artifacts/anvil-eotsd.conf .testnets/anvil-eots/eotsd.conf
 
-# Copy the fp_start.sh script to the babylon-fp directory
+# Copy Finality Provider start scripts, configs and helper scripts for Babylon FP
 cp ./container-entrypoints/babylon_fp_start.sh .testnets/babylon-fp/fp_start.sh
 cp artifacts/babylon-fp.conf .testnets/babylon-fp/fpd.conf
 cp ./scripts/fund-address.sh .testnets/babylon-fp/fund-address.sh
 cp ./scripts/print-babylon-fp.sh .testnets/babylon-fp/print-babylon-fp.sh
 cp ./scripts/delegate-btc-babylon-fp.sh .testnets/babylon-fp/delegate-btc-babylon-fp.sh
 
-
-# Copy the fp_start.sh script to the anvil-fp directory
+# Copy Finality Provider start scripts, configs and helper scripts for Anvil FP
 cp ./container-entrypoints/anvil_fp_start.sh .testnets/anvil-fp/fp_start.sh
 cp ./scripts/fund-address.sh .testnets/anvil-fp/fund-address.sh
-cp ./scripts/deploy_finality_contract.sh .testnets/anvil-fp/deploy_finality_contract.sh
+cp ./scripts/deploy-finality-contract.sh .testnets/anvil-fp/deploy-finality-contract.sh
 cp artifacts/anvil-fp.conf .testnets/anvil-fp/fpd.conf
 cp ./scripts/print-anvil-fp.sh .testnets/anvil-fp/print-anvil-fp.sh
 cp ./scripts/delegate-btc-anvil-fp.sh .testnets/anvil-fp/delegate-btc-anvil-fp.sh
 cp ./scripts/register-consumer.sh .testnets/anvil-fp/register-consumer.sh
 
+# Ensure all config files and directories are writable
 chmod -R 777 .testnets

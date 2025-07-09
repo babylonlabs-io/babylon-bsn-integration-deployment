@@ -1,9 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -eo pipefail
 
-# Exit on any error
-set -e
+# Usage:
+#   bash ./deploy-finality-contract.sh
 
-# VARIABLES (customize as needed)
+# Variables
 BBN_CHAIN_ID="chain-test"
 CONSUMER_ID="31337"
 HOME_DIR="/babylondhome"
@@ -11,12 +12,12 @@ ADMIN_KEY="test-spending-key"
 CONTRACT_WASM_PATH="/contracts/op_finality_gadget.wasm"
 LABEL="finality"
 
-# Retrieve admin address for instantiation
 echo "🔍 Fetching admin address..."
-admin=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home $HOME_DIR keys show $ADMIN_KEY --keyring-backend test --output json | jq -r '.address'")
+admin=$(docker exec babylondnode0 /bin/sh -c \
+  "/bin/babylond --home $HOME_DIR keys show $ADMIN_KEY --keyring-backend test --output json | jq -r '.address'")
+
 echo "Using admin address: $admin"
 
-# Deploy finality contract
 echo "📋 Deploying finality contract..."
 
 echo "  → Storing contract WASM..."
@@ -40,6 +41,7 @@ echo "    Output: $INSTANTIATE_OUTPUT"
 
 sleep 10
 
-# Extract and display contract address
-finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home $HOME_DIR q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
+finalityContractAddr=$(docker exec babylondnode0 /bin/sh -c \
+  "/bin/babylond --home $HOME_DIR q wasm list-contracts-by-code 1 --output json | jq -r '.contracts[0]'")
+
 echo "✅ Finality contract deployed at: $finalityContractAddr"

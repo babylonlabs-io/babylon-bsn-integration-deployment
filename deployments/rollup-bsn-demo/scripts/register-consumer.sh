@@ -1,22 +1,21 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -eo pipefail
 
-# Load .env if present
-[ -f .env ] && source .env
+# Usage:
+#   bash ./register_consumer.sh [finality_contract_address]
 
-# Default values
 BBN_CHAIN_ID="${BBN_CHAIN_ID:-chain-test}"
 CONSUMER_ID="${CONSUMER_ID:-31337}"
 HOME_DIR="${HOME_DIR:-/babylondhome}"
 ADMIN_KEY="${ADMIN_KEY:-test-spending-key}"
 CONSUMER_NAME="${CONSUMER_NAME:-anvil-consumer}"
-CONSUMER_DESC="${CONSUMER_DESC:-"local Anvil Consumer"}"
+CONSUMER_DESC="${CONSUMER_DESC:-local Anvil Consumer}"
 
-# Get finality contract address
-if [ -n "$1" ]; then
+# Check finality contract address
+if [[ -n "$1" ]]; then
   FINALITY_CONTRACT_ADDR="$1"
-elif [ -z "$FINALITY_CONTRACT_ADDR" ]; then
-  echo "❌ Missing FINALITY_CONTRACT_ADDR (arg or .env)"
+elif [[ -z "$FINALITY_CONTRACT_ADDR" ]]; then
+  echo "❌ Missing FINALITY_CONTRACT_ADDR"
   exit 1
 fi
 
@@ -33,7 +32,3 @@ echo "✅ Consumer registered"
 echo "$REGISTER_OUTPUT" | jq -r '.txhash // .code // "No TX hash"'
 
 sleep 5
-
-# 📝 Query tips:
-# To list all registered consumers:
-# docker exec babylondnode0 /bin/sh -c "/bin/babylond query btcstkconsumer registered-consumers --output json"

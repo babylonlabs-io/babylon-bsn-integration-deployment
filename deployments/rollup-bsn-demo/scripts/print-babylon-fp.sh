@@ -1,10 +1,12 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -eo pipefail
 
-# Usage: ./print-babylon-fp.sh
+# Usage:
+#   bash ./print-babylon-fp.sh
 
-CONTAINER=${CONTAINER:-babylondnode0}
-HOME_DIR=${HOME_DIR:-/babylondhome}
+CONTAINER="${CONTAINER:-babylondnode0}"
+HOME_DIR="${HOME_DIR:-/babylondhome}"
 
 echo "🔍 Babylon Finality Providers:"
-docker exec $CONTAINER /bin/sh -c "/bin/babylond --home $HOME_DIR q btcstaking finality-providers --output json" | jq '.finality_providers'
+docker exec "$CONTAINER" /bin/sh -c \
+  "/bin/babylond --home $HOME_DIR q btcstaking finality-providers --output json" | jq '.finality_providers'

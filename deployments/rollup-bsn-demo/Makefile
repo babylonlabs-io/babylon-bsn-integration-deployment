@@ -38,5 +38,3 @@ start-deployment: stop-deployment build-deployment
 stop-deployment:
 	$(DOCKER) compose -f artifacts/docker-compose.yml down
 	rm -rf $(CURDIR)/.testnets
-
-run-demo: start-deployment
