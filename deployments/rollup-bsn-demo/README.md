@@ -11,7 +11,7 @@ A complete demonstration of how rollup chains can leverage Babylon's Bitcoin sec
 **Components:**
 - 🏛️ **Babylon chain** - Private testnet providing Bitcoin security
 - ⚡ **Anvil L2 rollup** - Example rollup chain being secured
-- ₿ **Bitcoin regtest** - Local Bitcoin testnet for development
+- ₿ **Bitcoin node** - Local Bitcoin testnet for development
 - 🔐 **Two EOTS services** - Cryptographic signing for each finality provider
 - 👥 **Two Finality Providers** - Babylon FP and Anvil FP securing the chains
 - 📋 **Rollup BSN contracts** - On-chain coordination of BSN participation
@@ -24,7 +24,7 @@ A complete demonstration of how rollup chains can leverage Babylon's Bitcoin sec
 
 ## Documentation
 
-- **📖 [Setup Guide](docs/ROLLUP_BSN_DEMO_SETUP.md)** - Complete walkthrough of the demo architecture, components, and step-by-step setup instructions for running the BSN integration locally
+- **📖 [Setup Guide](docs/README.md)** - Complete walkthrough of the demo architecture, components, and step-by-step setup instructions for running the BSN integration locally
 
 - **🛠️ [Scripts](scripts/README.md)** - Detailed documentation for individual operations like deploying contracts, registering finality providers, delegating BTC, and funding addresses
 
