@@ -361,7 +361,7 @@ echo "🎲 Step 7a: Generating and committing public randomness..."
 # Configure parameters for crypto operations
 start_height=1
 num_pub_rand=50000  # Commit randomness for 50,000 blocks (similar to mainnet)
-num_finality_sigs=3  # Submit finality signatures for first 5 blocks
+num_finality_sigs=3  # Submit finality signatures for first 3 blocks
 
 echo "  → Using crypto-ops to generate randomness (crypto-only)..."
 echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
