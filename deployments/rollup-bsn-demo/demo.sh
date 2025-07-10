@@ -205,7 +205,7 @@ echo "  → Creating Babylon Finality Provider..."
 
 # Generate PoP for Babylon FP using crypto-ops
 echo "  → Generating PoP for Babylon FP..."
-bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin)
+bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin $BBN_CHAIN_ID)
 if [ $? -ne 0 ]; then
     echo "  ❌ Failed to generate PoP for Babylon FP"
     exit 1
@@ -229,7 +229,7 @@ echo "  → Creating Consumer Finality Provider..."
 
 # Generate PoP for Consumer FP using crypto-ops
 echo "  → Generating PoP for Consumer FP..."
-consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin)
+consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin $BBN_CHAIN_ID)
 if [ $? -ne 0 ]; then
     echo "  ❌ Failed to generate PoP for Consumer FP"
     exit 1
@@ -368,7 +368,7 @@ echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
 
 # Step 7a: Generate public randomness commitment data using crypto-only command
 echo "  → Generating public randomness commitment data for blocks $start_height to $((start_height + num_pub_rand - 1))..."
-pub_rand_data=$(./crypto-ops generate-pub-rand-commitment $consumer_btc_sk $finalityContractAddr $start_height $num_pub_rand)
+pub_rand_data=$(./crypto-ops generate-pub-rand-commitment $consumer_btc_sk $finalityContractAddr $CONSUMER_ID $start_height $num_pub_rand)
 
 if [ $? -ne 0 ]; then
     echo "  ❌ Failed to generate public randomness commitment data"
@@ -514,7 +514,7 @@ for ((block_height=start_height; block_height<start_height+num_finality_sigs; bl
     
     # Generate finality signature using crypto-only command (block hash generated internally)
     echo "    → Generating finality signature (crypto-only)..."
-    finality_sig_data=$(echo "$rand_list_info_json" | ./crypto-ops generate-finality-sig $consumer_btc_sk $finalityContractAddr $block_height)
+    finality_sig_data=$(echo "$rand_list_info_json" | ./crypto-ops generate-finality-sig $consumer_btc_sk $finalityContractAddr $CONSUMER_ID $block_height)
     
     if [ $? -ne 0 ]; then
         echo "    ❌ Block $block_height: Failed to generate finality signature"
