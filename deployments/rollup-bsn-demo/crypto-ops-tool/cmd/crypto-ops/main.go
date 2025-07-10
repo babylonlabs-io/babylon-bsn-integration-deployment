@@ -183,8 +183,8 @@ func ConvertFromSerializable(serializable *SerializableRandListInfo) (*datagen.R
 	return randListInfo, nil
 }
 
-func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (*ProofOfPossession, error) {
-	signingContext := signingcontext.FpPopContextV0(BBN_CHAIN_ID, appparams.AccBTCStaking.String())
+func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey, chainID string) (*ProofOfPossession, error) {
+	signingContext := signingcontext.FpPopContextV0(chainID, appparams.AccBTCStaking.String())
 	pop, err := datagen.NewPoPBTC(signingContext, addr, btcSK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate PoP: %w", err)
@@ -201,14 +201,14 @@ func generateProofOfPossession(addr sdk.AccAddress, btcSK *btcec.PrivateKey) (*P
 }
 
 // Generate public randomness and commitment (crypto only, no chain submission)
-func generatePublicRandomnessCommitment(r *mathrand.Rand, contractAddr string, consumerFpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*datagen.RandListInfo, *bbn.BIP340PubKey, []byte, error) {
+func generatePublicRandomnessCommitment(r *mathrand.Rand, contractAddr string, consumerID string, consumerFpSk *btcec.PrivateKey, startHeight, numPubRand uint64) (*datagen.RandListInfo, *bbn.BIP340PubKey, []byte, error) {
 	fmt.Fprintln(os.Stderr, "  → Generating public randomness list...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
 	btcPK := consumerFpSk.PubKey()
 	bip340PK := bbn.NewBIP340PubKeyFromBTCPK(btcPK)
 
-	signingContext := signingcontext.FpRandCommitContextV0(CONSUMER_ID, contractAddr)
+	signingContext := signingcontext.FpRandCommitContextV0(consumerID, contractAddr)
 	randListInfo, msgCommitPubRandList, err := datagen.GenRandomMsgCommitPubRandList(r, consumerFpSk, signingContext, startHeight, numPubRand)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to generate public randomness list: %v", err)
@@ -284,7 +284,7 @@ Commands:
   generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
   
   # Crypto-only operations (recommended)
-  generate-pub-rand-commitment <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
+  generate-pub-rand-commitment <private_key_hex> <contract_addr> <consumer_id> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
   generate-finality-sig <private_key_hex> <contract_addr> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
   
   # Legacy combined operations (crypto + chain submission)
@@ -295,7 +295,7 @@ Commands:
 Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
-  %s generate-pub-rand-commitment abc123... bbn1contract... 1 100
+  %s generate-pub-rand-commitment abc123... bbn1contract... consumer-id 1 100
   echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... bbn1contract... 1
   %s commit-pub-rand abc123... bbn1contract... 1 100
   echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
@@ -348,7 +348,7 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "generate-pop":
-		if len(os.Args) < 4 {
+		if len(os.Args) < 5 {
 			fmt.Println("Error: Missing arguments for generate-pop")
 			printUsage()
 			os.Exit(1)
@@ -356,6 +356,7 @@ func main() {
 
 		privKeyHex := os.Args[2]
 		babylonAddr := os.Args[3]
+		chainID := os.Args[4]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -371,7 +372,7 @@ func main() {
 			log.Fatalf("Invalid Babylon address: %v", err)
 		}
 
-		pop, err := generateProofOfPossession(addr, fpSk)
+		pop, err := generateProofOfPossession(addr, fpSk, chainID)
 		if err != nil {
 			log.Fatalf("Failed to generate proof of possession: %v", err)
 		}
@@ -384,7 +385,7 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "generate-pub-rand-commitment":
-		if len(os.Args) < 6 {
+		if len(os.Args) < 7 {
 			fmt.Println("Error: Missing arguments for generate-pub-rand-commitment")
 			printUsage()
 			os.Exit(1)
@@ -392,8 +393,9 @@ func main() {
 
 		privKeyHex := os.Args[2]
 		contractAddr := os.Args[3]
-		startHeightStr := os.Args[4]
-		numPubRandStr := os.Args[5]
+		consumerID := os.Args[4]
+		startHeightStr := os.Args[5]
+		numPubRandStr := os.Args[6]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -415,7 +417,7 @@ func main() {
 		}
 
 		// Generate crypto data only
-		randListInfo, bip340PK, signature, err := generatePublicRandomnessCommitment(r, contractAddr, fpSk, startHeight, numPubRand)
+		randListInfo, bip340PK, signature, err := generatePublicRandomnessCommitment(r, contractAddr, consumerID, fpSk, startHeight, numPubRand)
 		if err != nil {
 			log.Fatalf("Failed to generate public randomness commitment: %v", err)
 		}
