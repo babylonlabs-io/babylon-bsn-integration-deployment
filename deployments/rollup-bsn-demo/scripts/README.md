@@ -85,6 +85,15 @@ Register a consumer with the finality contract
 bash register_consumer.sh [finality_contract_address]
 ```
 
+---
+
+### [`verify-fp-signatures.sh`](./verify-fp-signatures.sh)  
+Verify that FP is submitting signatures to rollup contract
+
+```bash
+bash verify-fp-signatures.sh [finality_contract_address]
+```
+
 
 
 

@@ -52,7 +52,7 @@ echo "✅ BTC delegation created successfully"
 echo "   → TX hash: $btcTxHash"
 
 echo
-echo "⏳ Step 6: Waiting for BTC delegation activation..."
+echo "Waiting for BTC delegation activation..."
 
 # Poll for active delegation status
 for i in {1..30}; do
