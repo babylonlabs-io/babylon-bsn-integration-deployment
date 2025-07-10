@@ -34,7 +34,7 @@ FP_ADDRESS="bbn1mnas3qgsfs6lhh2k2kykew036uk2asu4hwggxs"
 echo "Using predefined Babylon FP address: $FP_ADDRESS"
 
 # Fund babylon fp address
-./scripts/fund-address.sh "$FP_ADDRESS"
+bash ./scripts/fund-address.sh "$FP_ADDRESS"
 
 # Wait a few seconds for the container and fpd daemon to fully start
 sleep 5
@@ -63,8 +63,6 @@ output=$(bash ./scripts/print-babylon-fp.sh)
 btc_pk=$(echo "$output" | tail -n +2 | jq -r '.[0].btc_pk')
 echo "Babylon FP BTC Public Key: $btc_pk"
 
-# Delegate BTC using the extracted btc_pk
-bash ./scripts/delegate-btc-babylon-fp.sh "$btc_pk"
 #echo "--------------------------------"
 
 # =========================
@@ -80,7 +78,11 @@ echo "Saved finality contract address: $finalityContractAddr"
 
 # Update config with deployed contract address
 FPD_CONF="./.testnets/anvil-fp/fpd.conf"
-sed -i '' "s|^OPFinalityGadgetAddress *=.*|OPFinalityGadgetAddress = $finalityContractAddr|" "$FPD_CONF"
+if [[ "$(uname)" == "Darwin" ]]; then
+  sed -i '' "s|^OPFinalityGadgetAddress *=.*|OPFinalityGadgetAddress = $finalityContractAddr|" "$FPD_CONF"
+else
+  sed -i "s|^OPFinalityGadgetAddress *=.*|OPFinalityGadgetAddress = $finalityContractAddr|" "$FPD_CONF"
+fi
 
 # =========================
 # 4. Register Consumer BSN
@@ -103,7 +105,7 @@ FP_ADDRESS="bbn1y7q0wsl6ff7wq9p8m7m9kmp3t5rqdg5c0d2vgd"
 echo "Using predefined anvil FP address: $FP_ADDRESS"
 
 # Fund babylon fp address
-./scripts/fund-address.sh "$FP_ADDRESS"
+bash ./scripts/fund-address.sh "$FP_ADDRESS"
 
 # Wait a few seconds for the container and fpd daemon to fully start
 sleep 5
@@ -140,6 +142,6 @@ echo "--------------------------------"
 # 5. Verify FP signatures and public randomness
 # =========================
 # Wait a few seconds for delegation to be processed
-sleep 30
+sleep 5
 
 bash ./scripts/verify-fp-signatures.sh "$finalityContractAddr"

@@ -23,13 +23,6 @@ while true; do
     sleep 1
 done
 
-echo "Creating keyrings and sending funds to Babylon Node Consumers"
-
-# Adjust permissions for keyring directory on Linux hosts
-[[ "$(uname)" == "Linux" ]] && chown -R 1138:1138 .testnets/eotsmanager
-
-sleep 15
-
 echo "Funding BTC staker account on Babylon"
 
 # Generate key for BTC staker, fund the address, and move keyring files
@@ -47,36 +40,6 @@ mv .testnets/node0/babylond/.tmpdir/keyring-test/* .testnets/btc-staker/keyring-
 sleep 7
 
 echo "Funding finality provider account on Babylon"
-
-# Generate key for finality provider, fund the address, and copy keyring files
-docker exec babylondnode0 /bin/sh -c '
-    FP_BABYLON_ADDR=$(/bin/babylond --home /babylondhome/.tmpdir keys add \
-        finality-provider --output json --keyring-backend test | jq -r .address) && \
-    /bin/babylond --home /babylondhome tx bank send test-spending-key \
-        ${FP_BABYLON_ADDR} 100000000ubbn --fees 600000ubbn -y \
-        --chain-id chain-test --keyring-backend test
-'
-mkdir -p .testnets/finality-provider/keyring-test
-cp -R .testnets/node0/babylond/.tmpdir/keyring-test/* .testnets/finality-provider/keyring-test
-[[ "$(uname)" == "Linux" ]] && chown -R 1138:1138 .testnets/finality-provider
-
-sleep 7
-
-echo "Funding finality provider account on Babylon consumer daemon"
-
-# Generate key for consumer FP, fund the address, and copy keyring files
-docker exec babylondnode0 /bin/sh -c '
-    FP_CONSUMER_ADDR=$(/bin/babylond --home /babylondhome/.tmpdir keys add \
-        consumer-fp --output json --keyring-backend test | jq -r .address) && \
-    /bin/babylond --home /babylondhome tx bank send test-spending-key \
-        ${FP_CONSUMER_ADDR} 100000000ubbn --fees 600000ubbn -y \
-        --chain-id chain-test --keyring-backend test
-'
-mkdir -p .testnets/consumer-fp/keyring-test
-cp -R .testnets/node0/babylond/.tmpdir/keyring-test/* .testnets/consumer-fp/keyring-test
-[[ "$(uname)" == "Linux" ]] && chown -R 1138:1138 .testnets/consumer-fp
-
-sleep 7
 
 echo "Funding vigilante account on Babylon"
 

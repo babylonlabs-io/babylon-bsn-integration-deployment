@@ -60,7 +60,7 @@ echo
 echo "Waiting for BTC delegation activation..."
 
 # Wait and check for delegation activation
-for i in {1..30}; do
+for i in {1..50}; do
   activeDelegations=$(docker exec "$BABYLON_CONTAINER" /bin/sh -c 'babylond q btcstaking btc-delegations active -o json | jq ".btc_delegations | length"')
   
   if [[ "$activeDelegations" -ge 1 ]]; then
