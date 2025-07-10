@@ -278,30 +278,20 @@ func printUsage() {
 	fmt.Printf(`Usage: %s <command> [args...]
 
 Commands:
-  generate-keypair                                      - Generate a new BTC key pair
-  generate-pop <private_key_hex> <babylon_address>      - Generate Proof of Possession for FP creation
-  
-  # Crypto-only operations (recommended)
+  generate-keypair                                                                                   - Generate a new BTC key pair
+  generate-pop <private_key_hex> <babylon_address> <babylon_chain_id>                                        - Generate Proof of Possession for FP creation
   generate-pub-rand-commitment <private_key_hex> <contract_addr> <consumer_id> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
-  generate-finality-sig <private_key_hex> <contract_addr> <consumer_id> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
-  
-  # Legacy combined operations (crypto + chain submission)
-  commit-pub-rand <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness only
-  submit-finality-sig <private_key_hex> <contract_addr> <block_height> - Submit finality signature only (reads rand_list_info_json from stdin)
-  commit-and-finalize <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness and submit finality signature (legacy)
+  generate-finality-sig <private_key_hex> <contract_addr> <consumer_id> <block_height>               - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
   
 Examples:
   %s generate-keypair
-  %s generate-pop abc123... bbn1...
+  %s generate-pop abc123... bbn1address... chain-test
   %s generate-pub-rand-commitment abc123... bbn1contract... consumer-id 1 100
   echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... bbn1contract... consumer-id 1
-  %s commit-pub-rand abc123... bbn1contract... 1 100
-  echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
-  %s commit-and-finalize abc123... bbn1contract... 1 100
   
 Output: All commands output JSON that can be parsed by bash scripts
   
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func main() {
