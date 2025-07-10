@@ -28,8 +28,6 @@ import (
 // TODO: The following constants are duplicated in both this Go script and demo.sh.
 // Consider consolidating them into a single place.
 const (
-	BBN_CHAIN_ID    = "chain-test"
-	CONSUMER_ID     = "consumer-id"
 	KEYRING_BACKEND = "test"
 	KEY_NAME        = "test-spending-key"
 )
@@ -222,7 +220,7 @@ func generatePublicRandomnessCommitment(r *mathrand.Rand, contractAddr string, c
 }
 
 // Generate finality signature (crypto only, no chain submission)
-func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight, startHeight uint64, blockHash []byte, contractAddr string) (*bbn.BIP340PubKey, []byte, []byte, *merkle.Proof, error) {
+func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListInfo, consumerFpSk *btcec.PrivateKey, blockHeight, startHeight uint64, blockHash []byte, contractAddr string, consumerID string) (*bbn.BIP340PubKey, []byte, []byte, *merkle.Proof, error) {
 	fmt.Fprintln(os.Stderr, "  → Generating finality signature...")
 
 	// Follow exact test pattern: btcPK -> bip340PK -> MarshalHex()
@@ -233,7 +231,7 @@ func generateFinalitySignature(r *mathrand.Rand, randListInfo *datagen.RandListI
 
 	// Create message to sign with signing context (matching contract expectations)
 	// Contract expects: (signing_context || block_height || block_hash)
-	signingContext := signingcontext.FpFinVoteContextV0(CONSUMER_ID, contractAddr)
+	signingContext := signingcontext.FpFinVoteContextV0(consumerID, contractAddr)
 	var msgToSign []byte
 	msgToSign = append(msgToSign, []byte(signingContext)...)
 	msgToSign = append(msgToSign, sdk.Uint64ToBigEndian(blockHeight)...)
@@ -285,7 +283,7 @@ Commands:
   
   # Crypto-only operations (recommended)
   generate-pub-rand-commitment <private_key_hex> <contract_addr> <consumer_id> <start_height> <num_pub_rand> - Generate randomness and commitment data (crypto only)
-  generate-finality-sig <private_key_hex> <contract_addr> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
+  generate-finality-sig <private_key_hex> <contract_addr> <consumer_id> <block_height> - Generate finality signature (crypto only, reads rand_list_info_json from stdin)
   
   # Legacy combined operations (crypto + chain submission)
   commit-pub-rand <private_key_hex> <contract_addr> <start_height> <num_pub_rand> - Commit pub randomness only
@@ -296,7 +294,7 @@ Examples:
   %s generate-keypair
   %s generate-pop abc123... bbn1...
   %s generate-pub-rand-commitment abc123... bbn1contract... consumer-id 1 100
-  echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... bbn1contract... 1
+  echo '{...randListInfoJson...}' | %s generate-finality-sig abc123... bbn1contract... consumer-id 1
   %s commit-pub-rand abc123... bbn1contract... 1 100
   echo '{...randListInfoJson...}' | %s submit-finality-sig abc123... bbn1contract... 1
   %s commit-and-finalize abc123... bbn1contract... 1 100
@@ -446,7 +444,7 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "generate-finality-sig":
-		if len(os.Args) < 5 {
+		if len(os.Args) < 6 {
 			fmt.Println("Error: Missing arguments for generate-finality-sig")
 			printUsage()
 			os.Exit(1)
@@ -454,7 +452,8 @@ func main() {
 
 		privKeyHex := os.Args[2]
 		contractAddr := os.Args[3]
-		blockHeightStr := os.Args[4]
+		consumerID := os.Args[4]
+		blockHeightStr := os.Args[5]
 
 		// Parse the private key
 		privKeyBytes, err := hex.DecodeString(privKeyHex)
@@ -492,7 +491,7 @@ func main() {
 		}
 
 		// Generate finality signature (crypto only)
-		bip340PK, publicRandomness, signature, proof, err := generateFinalitySignature(r, randListInfo, fpSk, blockHeight, serializable.StartHeight, blockHash, contractAddr)
+		bip340PK, publicRandomness, signature, proof, err := generateFinalitySignature(r, randListInfo, fpSk, blockHeight, serializable.StartHeight, blockHash, contractAddr, consumerID)
 		if err != nil {
 			log.Fatalf("Failed to generate finality signature: %v", err)
 		}
