@@ -11,74 +11,103 @@ FINALITY_CONTRACT=$1
 ANVIL_RPC="http://localhost:8545"
 BABYLON_NODE="babylondnode0"
 HOME_DIR="/babylondhome"
-MAX_BLOCKS=50
-CONSECUTIVE_GOAL=5
-SLEEP_INTERVAL=15
+BBN_CHAIN_ID="chain-test"
+FP_CONTAINER="anvil-fp"
 
-echo "🔎 Starting continuous verification loop for contract: $FINALITY_CONTRACT"
+echo "🔍 Verifying finality provider is working..."
 
-while true; do
-  # Get latest block number
-  response=$(curl -s -X POST -H "Content-Type: application/json" \
-    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-    $ANVIL_RPC)
+# Function to check if a block has signatures
+check_block_signature() {
+  local block=$1
+  local hex=$(printf "0x%x" $block)
 
-  latest_block_hex=$(echo "$response" | jq -r '.result')
+  # Get block hash from Anvil
+  local hash=$(curl -s -X POST -H "Content-Type: application/json" \
+    --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$hex\",false],\"id\":1}" \
+    $ANVIL_RPC | jq -r '.result.hash' 2>/dev/null)
 
-  if [ -z "$latest_block_hex" ] || [ "$latest_block_hex" == "null" ]; then
-    echo "⚠️ Could not fetch latest block number from Anvil RPC. Retrying after $SLEEP_INTERVAL s..."
-    sleep $SLEEP_INTERVAL
-    continue
+  if [ "$hash" != "null" ] && [ -n "$hash" ]; then
+    local hash_hex=${hash#0x}
+
+    # Query contract for signatures
+    local result=$(docker exec $BABYLON_NODE sh -c \
+      "babylond query wasm contract-state smart $FINALITY_CONTRACT \
+      '{\"block_voters\":{\"height\":$block,\"hash_hex\":\"$hash_hex\"}}' \
+      --chain-id $BBN_CHAIN_ID --output json" 2>/dev/null)
+
+    if echo "$result" | jq -e '.data != null and (.data | length) > 0' >/dev/null 2>&1; then
+      return 0  # Has signature
+    fi
+  fi
+  return 1  # No signature
+}
+
+# Wait for FP to start submitting batches
+echo "📋 Waiting for finality provider to start submitting batches..."
+max_attempts=15
+attempt=1
+recent_batch=""
+
+while [ $attempt -le $max_attempts ]; do
+  recent_batch=$(docker logs --tail 200 $FP_CONTAINER 2>&1 | \
+    grep "Successfully submitted finality signatures in a batch" | tail -1)
+
+  if [ -n "$recent_batch" ]; then
+    echo "✅ Found recent batch submission:"
+    echo "   $recent_batch"
+    break
   fi
 
-  hex_no_prefix=${latest_block_hex#0x}
-  latest_height=$((16#$hex_no_prefix))
-
-  start_height=$((latest_height - MAX_BLOCKS + 1))
-  if [ $start_height -lt 1 ]; then
-    start_height=1
-  fi
-
-  echo "ℹ️ Latest Anvil block: $latest_height"
-  echo "ℹ️ Verifying from block $start_height to $latest_height"
-
-  consecutive=0
-
-  for (( height=start_height; height<=latest_height; height++ )); do
-    hex_height=$(printf "0x%x" "$height")
-    block_json=$(curl -s -X POST -H "Content-Type: application/json" \
-      --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$hex_height\",false],\"id\":1}" \
-      $ANVIL_RPC)
-    block_hash=$(echo "$block_json" | jq -r '.result.hash')
-
-    if [ -z "$block_hash" ] || [ "$block_hash" == "null" ]; then
-      echo "⚠️ Could not fetch block hash for height $height, skipping..."
-      consecutive=0
-      continue
-    fi
-
-    block_hash_no_prefix=${block_hash#0x}
-    query_msg=$(jq -n --argjson height "$height" --arg hash "$block_hash_no_prefix" \
-      '{block_voters: {height: $height, hash: $hash}}')
-
-    result=$(docker exec $BABYLON_NODE /bin/sh -c \
-      "babylond --home $HOME_DIR q wasm contract-state smart $FINALITY_CONTRACT '$query_msg' --output json" 2>/dev/null || echo "{}")
-
-    has_signature=$(echo "$result" | jq '.data != null and (.data | length) > 0')
-
-    if [ "$has_signature" = true ]; then
-      echo "✅ Signature found for block $height"
-      consecutive=$((consecutive + 1))
-      if [ $consecutive -ge $CONSECUTIVE_GOAL ]; then
-        echo "🎉 Found $CONSECUTIVE_GOAL consecutive blocks with signatures! Verification complete."
-        exit 0
-      fi
-    else
-      echo "⚠️ No signature found for block $height"
-      consecutive=0
-    fi
-  done
-
-  echo "ℹ️ Did not find $CONSECUTIVE_GOAL consecutive signed blocks yet. Retrying in $SLEEP_INTERVAL seconds..."
-  sleep $SLEEP_INTERVAL
+  echo "⏳ Attempt $attempt/$max_attempts: No batch yet, retrying in 5s..."
+  attempt=$((attempt + 1))
+  sleep 5
 done
+
+if [ -z "$recent_batch" ]; then
+  echo "❌ No batch submission found after $max_attempts attempts"
+  echo "   → FP might not be working properly"
+  exit 1
+fi
+
+# Extract start and end heights
+start_height=$(echo "$recent_batch" | grep -o '"start_height": [0-9]*' | cut -d' ' -f2)
+end_height=$(echo "$recent_batch" | grep -o '"end_height": [0-9]*' | cut -d' ' -f2)
+
+if [ -z "$start_height" ] || [ -z "$end_height" ]; then
+  echo "❌ Could not extract block heights from log"
+  exit 1
+fi
+
+echo "📝 Submitted range: blocks $start_height to $end_height"
+echo ""
+
+# Verify signatures for each block in the range
+echo "🔍 Verifying signatures exist for submitted blocks..."
+all_signed=true
+consecutive_count=0
+
+for ((block=start_height; block<=end_height; block++)); do
+  echo -n "   Block $block: "
+  if check_block_signature $block; then
+    echo "✅ HAS SIGNATURE"
+    consecutive_count=$((consecutive_count + 1))
+  else
+    echo "❌ NO SIGNATURE"
+    all_signed=false
+  fi
+done
+
+echo ""
+
+# Report results
+if [ "$all_signed" = true ]; then
+  echo "🎉 SUCCESS! Finality provider is working correctly!"
+  echo "   → Found $consecutive_count consecutive signed blocks ($start_height-$end_height)"
+  echo "   → All submitted signatures verified ✅"
+  exit 0
+else
+  echo "⚠️ ISSUE: Some blocks are missing signatures"
+  echo "   → FP claimed to submit blocks $start_height-$end_height"
+  echo "   → But not all blocks have verified signatures"
+  exit 1
+fi

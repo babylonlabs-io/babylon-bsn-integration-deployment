@@ -250,7 +250,7 @@ services:
   anvil-fp:
     container_name: anvil-fp
     image: babylonlabs-io/finality-provider
-    command: ["fpd", "start", "--home", "/home/anvilFpHome", "--rpc-listener", "127.0.0.1:45662"]
+    command: ["rollup-fpd", "start", "--home", "/home/anvilFpHome", "--rpc-listener", "127.0.0.1:45662"]
     networks:
       localnet:
         ipv4_address: 192.168.10.19
