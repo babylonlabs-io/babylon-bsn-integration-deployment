@@ -134,6 +134,8 @@ docker exec anvil-fp fpd create-finality-provider \
 echo "Restarting anvil-fp container..."
 docker restart anvil-fp
 
+sleep 5
+
 # Print Anvil FP info and save output
 output=$(bash ./scripts/print-anvil-fp.sh)
 anvil_btc_pk=$(echo "$output" | tail -n +2 | jq -r '.[0].btc_pk')

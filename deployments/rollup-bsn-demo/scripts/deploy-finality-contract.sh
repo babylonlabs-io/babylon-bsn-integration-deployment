@@ -26,8 +26,9 @@ STORE_TX=$(echo "$STORE_JSON" | jq -r '.txhash')
 
 sleep 10
 
-STORE_RESULT=$(babylond query tx "$STORE_TX" --node "$NODE_RPC" --output json)
-
+STORE_RESULT=$(docker exec babylondnode0 sh -c \
+  "babylond query tx \"$STORE_TX\" --node \"$NODE_RPC\" --output json")
+  
 CODE_ID=$(echo "$STORE_RESULT" | jq -r '
   .events[]
   | select(.type == "store_code")
