@@ -177,7 +177,7 @@ echo "  → Creating finality provider on-chain..."
 bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
     /bin/fpd cfp \
         --key-name finality-provider \
-        --chain-id $BBN_CHAIN_ID \
+        --chain-id $CONSUMER_ID \
         --eots-pk $bbn_btc_pk \
         --commission-rate 0.05 \
         --commission-max-rate 0.20 \
