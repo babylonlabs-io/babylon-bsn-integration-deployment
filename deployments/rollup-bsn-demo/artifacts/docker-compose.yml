@@ -1,4 +1,14 @@
 services:
+  foundry-anvil:
+    container_name: foundry-anvil
+    image: babylonlabs-io/foundry-anvil:latest
+    ports:
+      - "8545:8545"
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.20
+    restart: unless-stopped
+    
   tmkms:
     container_name: tmkms
     image: babylonlabs-io/tmkms:latest
@@ -164,32 +174,32 @@ services:
       - babylondnode0
     restart: unless-stopped
 
-  finality-provider:
-    container_name: finality-provider
+  babylon-eots:
+    container_name: babylon-eots
     image: babylonlabs-io/finality-provider
-    command: fpd start
-    networks:
-      localnet:
-        ipv4_address: 192.168.10.12
-    ports:
-      - "15822:15812"
-    volumes:
-      - ../.testnets/finality-provider:/home/finality-provider/.fpd
-    depends_on:
-      - babylondnode0
-    restart: unless-stopped
-
-  eotsmanager:
-    container_name: eotsmanager
-    image: babylonlabs-io/finality-provider
-    command: eotsd start
+    command: ["eotsd", "start", "--home", "/home/babylonEotsHome", "--rpc-listener", "0.0.0.0:15813"]
     networks:
       localnet:
         ipv4_address: 192.168.10.14
     ports:
-      - "15825:15813"
+      - "15813:15813"
     volumes:
-      - ../.testnets/eotsmanager:/home/finality-provider/.eotsd
+      - ../.testnets/babylon-eots:/home/babylonEotsHome
+    depends_on:
+      - babylondnode0
+    restart: unless-stopped
+
+  anvil-eots:
+    container_name: anvil-eots
+    image: babylonlabs-io/finality-provider
+    command: ["eotsd", "start", "--home", "/home/anvilEotsHome", "--rpc-listener", "0.0.0.0:15817"]
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.15
+    ports:
+      - "15817:15817"
+    volumes:
+      - ../.testnets/anvil-eots:/home/anvilEotsHome
     depends_on:
       - babylondnode0
     restart: unless-stopped
@@ -220,6 +230,38 @@ services:
       - babylondnode0
       - covenant-signer
     restart: unless-stopped
+
+  babylon-fp:
+    container_name: babylon-fp
+    image: babylonlabs-io/finality-provider
+    command: ["fpd", "start", "--home", "/home/babylonFpHome", "--rpc-listener", "127.0.0.1:45661"]
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.18
+    ports:
+      - "45661:45661"
+    volumes:
+      - ../.testnets/babylon-fp:/home/babylonFpHome
+    depends_on:
+      - babylondnode0
+      - babylon-eots
+    user: root 
+
+  anvil-fp:
+    container_name: anvil-fp
+    image: babylonlabs-io/finality-provider
+    command: ["rollup-fpd", "start", "--home", "/home/anvilFpHome", "--rpc-listener", "127.0.0.1:45662"]
+    networks:
+      localnet:
+        ipv4_address: 192.168.10.19
+    ports:
+      - "45662:45662"
+    volumes:
+      - ../.testnets/anvil-fp:/home/anvilFpHome
+    depends_on:
+      - babylondnode0
+      - anvil-eots
+    user: root 
 
   electrs:
     image: mempool/electrs:v3.1.0
