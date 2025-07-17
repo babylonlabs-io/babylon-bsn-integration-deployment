@@ -204,7 +204,8 @@ echo "--------------------------------"
 # =========================
 # 8. Verify FP signatures and public randomness
 # =========================
-# Wait a few seconds for delegation to be processed
-sleep 5
+# Wait a few seconds for FP to start submitting signatures
+echo "Waiting for FP to start submitting signatures..."
+sleep 60
 
 bash ./scripts/verify-fp-signatures.sh "$finalityContractAddr"
