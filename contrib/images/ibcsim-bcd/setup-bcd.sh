@@ -187,6 +187,7 @@ BABYLON_INIT_MSG='{
   "btc_staking_msg": "'$BTC_STAKING_INIT_MSG_B64'",
   "btc_finality_code_id": '$BTC_FINALITY_CODE_ID',
   "btc_finality_msg": "'$BTC_FINALITY_INIT_MSG_B64'",
+  "btc_light_client_initial_header": "{\"header\": {\"version\": 536870912, \"prev_blockhash\": \"000000c0a3841a6ae64c45864ae25314b40fd522bfb299a4b6bd5ef288cae74d\", \"merkle_root\": \"e666a9797b7a650597098ca6bf500bd0873a86ada05189f87073b6dfdbcaf4ee\", \"time\": 1599332844, \"bits\": 503394215, \"nonce\": 9108535}, \"height\": 2016, \"total_work\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkY98OU=\"}",
   "consumer_name": "test-consumer",
   "consumer_description": "test-consumer-description"
 }'
