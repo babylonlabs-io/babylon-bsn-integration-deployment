@@ -51,7 +51,7 @@ echo ""
 echo "📝 Step 4: Registering Consumer Chain"
 
 echo "  → Registering the consumer with ID: $CONSUMER_ID"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 2 --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
 
 echo "  → Verifying consumer registration..."
 while true; do
@@ -112,14 +112,48 @@ while true; do
 done
 
 echo ""
+echo "⚖️ Step 7a: Verifying BSN Contracts Proposal Status"
+echo "  → Checking if BSN contracts governance proposal has passed..."
+while true; do
+    # Get the latest passed proposal (should be the BSN contracts proposal)
+    LATEST_PROPOSAL=$(docker exec ibcsim-bcd /bin/sh -c "bcd query gov proposals --proposal-status passed --page-reverse -o json | jq -r '.proposals[0] // empty'")
+    
+    if [ -n "$LATEST_PROPOSAL" ] && [ "$LATEST_PROPOSAL" != "null" ]; then
+        PROPOSAL_ID=$(echo "$LATEST_PROPOSAL" | jq -r '.id')
+        PROPOSAL_STATUS=$(echo "$LATEST_PROPOSAL" | jq -r '.status')
+        PROPOSAL_TITLE=$(echo "$LATEST_PROPOSAL" | jq -r '.title')
+        
+        if [ "$PROPOSAL_STATUS" = "PROPOSAL_STATUS_PASSED" ] && [[ "$PROPOSAL_TITLE" == *"BSN"* ]]; then
+            echo "  ✅ BSN contracts proposal #$PROPOSAL_ID has passed!"
+            break
+        else
+            echo "  → Latest proposal: #$PROPOSAL_ID, Status: $PROPOSAL_STATUS, Title: $PROPOSAL_TITLE"
+            echo "  → Waiting for BSN contracts proposal to pass..."
+            sleep 10
+        fi
+    else
+        echo "  → No passed proposals found yet, waiting..."
+        sleep 10
+    fi
+done
+
+echo ""
+echo "📋 Step 7b: Getting BSN Contract Addresses"
+  echo "  → Getting contract addresses..."
+  # Query BSN contract addresses using the babylon module CLI
+  bsnContracts=$(docker exec ibcsim-bcd /bin/sh -c 'bcd query babylon bsn-contracts -o json')
+  babylonContractAddr=$(echo "$bsnContracts" | jq -r '.babylon_contract')
+  btcLightClientContractAddr=$(echo "$bsnContracts" | jq -r '.btc_light_client_contract')
+  btcStakingContractAddr=$(echo "$bsnContracts" | jq -r '.btc_staking_contract')
+  btcFinalityContractAddr=$(echo "$bsnContracts" | jq -r '.btc_finality_contract')
+  echo "  ✅ Babylon Contract: $babylonContractAddr"
+  echo "  ✅ BTC Light Client Contract: $btcLightClientContractAddr"
+  echo "  ✅ BTC Staking Contract: $btcStakingContractAddr"
+  echo "  ✅ BTC Finality Contract: $btcFinalityContractAddr"
+
+echo ""
 echo "🎉 Integration between Babylon and bcd is ready!"
 echo "Now we will try out BTC staking on the consumer chain..."
-
-echo "  → Getting contract addresses..."
-btcStakingContractAddr=$(docker exec ibcsim-bcd /bin/sh -c 'bcd q wasm list-contract-by-code 3 -o json | jq -r ".contracts[0]"')
-btcFinalityContractAddr=$(docker exec ibcsim-bcd /bin/sh -c 'bcd q wasm list-contract-by-code 4 -o json | jq -r ".contracts[0]"')
-echo "  ✅ BTC Staking Contract: $btcStakingContractAddr"
-echo "  ✅ BTC Finality Contract: $btcFinalityContractAddr"
 
 echo ""
 echo "👥 Step 8: Creating Finality Providers"
@@ -143,7 +177,7 @@ echo "  → Creating finality provider on-chain..."
 bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
     /bin/fpd cfp \
         --key-name finality-provider \
-        --chain-id $BBN_CHAIN_ID \
+        --chain-id $CONSUMER_ID \
         --eots-pk $bbn_btc_pk \
         --commission-rate 0.05 \
         --commission-max-rate 0.20 \
@@ -358,6 +392,8 @@ echo "🎉 BTC Staking Integration Demo Complete!"
 echo "=========================================="
 echo ""
 echo "✅ Consumer registered: $CONSUMER_ID"
+echo "✅ Babylon Contract: $babylonContractAddr"
+echo "✅ BTC Light Client Contract: $btcLightClientContractAddr"
 echo "✅ BTC Staking Contract: $btcStakingContractAddr"
 echo "✅ BTC Finality Contract: $btcFinalityContractAddr"
 echo "✅ Babylon FP BTC PK: $bbn_btc_pk"
