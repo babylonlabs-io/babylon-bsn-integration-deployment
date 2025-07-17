@@ -51,7 +51,7 @@ echo ""
 echo "📝 Step 4: Registering Consumer Chain"
 
 echo "  → Registering the consumer with ID: $CONSUMER_ID"
-docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
+docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description 0.1 --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --fees 100000ubbn -y"
 
 echo "  → Verifying consumer registration..."
 while true; do
