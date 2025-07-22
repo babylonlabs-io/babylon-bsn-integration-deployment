@@ -7,7 +7,7 @@ WORKDIR /work
 ARG TARGETARCH
 
 # Download and install Go
-ENV GOLANG_VERSION 1.21.4
+ENV GOLANG_VERSION 1.23.4
 RUN wget -q https://golang.org/dl/go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz && \
     tar -C /usr/local -xzf go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz && \
     rm go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz
@@ -20,7 +20,7 @@ WORKDIR /work
 
 ENV GO111MODULE on
 ENV RELAYER_TAG v2.5.2
-ENV BABYLON_SDK_TAG v0.9.0
+ENV BABYLON_SDK_TAG v0.10.1
 
 # Install the relayer
 RUN git clone https://github.com/cosmos/relayer.git
