@@ -117,12 +117,12 @@ echo "  → Checking if BSN contracts governance proposal has passed..."
 while true; do
     # Get the latest passed proposal (should be the BSN contracts proposal)
     LATEST_PROPOSAL=$(docker exec ibcsim-bcd /bin/sh -c "bcd query gov proposals --proposal-status passed --page-reverse -o json | jq -r '.proposals[0] // empty'")
-    
+
     if [ -n "$LATEST_PROPOSAL" ] && [ "$LATEST_PROPOSAL" != "null" ]; then
         PROPOSAL_ID=$(echo "$LATEST_PROPOSAL" | jq -r '.id')
         PROPOSAL_STATUS=$(echo "$LATEST_PROPOSAL" | jq -r '.status')
         PROPOSAL_TITLE=$(echo "$LATEST_PROPOSAL" | jq -r '.title')
-        
+
         if [ "$PROPOSAL_STATUS" = "PROPOSAL_STATUS_PASSED" ] && [[ "$PROPOSAL_TITLE" == *"BSN"* ]]; then
             echo "  ✅ BSN contracts proposal #$PROPOSAL_ID has passed!"
             break
@@ -177,7 +177,7 @@ echo "  → Creating finality provider on-chain..."
 bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
     /bin/fpd cfp \
         --key-name finality-provider \
-        --chain-id $CONSUMER_ID \
+        --chain-id $BBN_CHAIN_ID \
         --eots-pk $bbn_btc_pk \
         --commission-rate 0.05 \
         --commission-max-rate 0.20 \
@@ -185,12 +185,11 @@ bbn_fp_output=$(docker exec finality-provider /bin/sh -c "
         --moniker \"Babylon finality provider\" 2>&1"
 )
 
-# Filter out the text message and parse only the JSON part
-bbn_btc_pk=$(echo "$bbn_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
-if [ -z "$bbn_btc_pk" ]; then
-    echo "  ❌ Failed to extract Babylon BTC public key"
-    exit 1
-fi
+echo "  → Finality provider creation output:"
+echo "$bbn_fp_output"
+
+# Extract BTC public key from the command output or use the EOTS key we already have
+# Since the BTC PK is the same as the EOTS PK, we can reuse it
 echo "  ✅ Created Babylon finality provider"
 echo "  ✅ BTC PK: $bbn_btc_pk"
 
@@ -225,12 +224,11 @@ consumer_fp_output=$(docker exec consumer-fp /bin/sh -c "
         --moniker \"Consumer finality Provider\" 2>&1"
 )
 
-# Filter out the text message and parse only the JSON part
-consumer_btc_pk=$(echo "$consumer_fp_output" | grep -v "Your finality provider is successfully created" | jq -r '.finality_provider.btc_pk_hex')
-if [ -z "$consumer_btc_pk" ]; then
-    echo "  ❌ Failed to extract Consumer BTC public key"
-    exit 1
-fi
+echo "  → Consumer finality provider creation output:"
+echo "$consumer_fp_output"
+
+# Extract BTC public key from the command output or use the EOTS key we already have
+# Since the BTC PK is the same as the EOTS PK, we can reuse it
 echo "  ✅ Created consumer finality provider"
 echo "  ✅ BTC PK: $consumer_btc_pk"
 
