@@ -1,626 +1,211 @@
 #!/bin/bash
 
-set -e  # Exit on any error
-
-sleep 10 # wait for containers to be ready (cov emulator takes a while to start)
-
 BBN_CHAIN_ID="chain-test"
-CONSUMER_ID="consumer-id"
-MIN_PUB_RAND=100  # Minimum number of public randomness commitments required
+HOME_DIR="/babylondhome"
+ADMIN_KEY="test-spending-key"
 
-# 🔥 GAS TRACKING INFRASTRUCTURE
+# Wait a few seconds for everything to be ready
+sleep 10
 
-# Gas measurement function
-measure_gas() {
-    local tx_hash=$1
-    local operation_name=$2
-    
-    echo "  🔍 Measuring gas for: $operation_name"
-    echo "  → TX Hash: $tx_hash"
-    
-    # Wait for transaction to be processed with retries
-    local max_attempts=10
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        echo "  → Attempt $attempt/$max_attempts: Waiting for transaction to be processed..."
-        sleep 15
-        
-        # Get gas information
-        local gas_used=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q tx $tx_hash --output json | jq '.gas_used'")
-        local height=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q tx $tx_hash --output json | jq '.height'")
-        
-        # Check if transaction is processed (height > 0 and gas_used > 0)
-        if [ "$height" != "0" ] && [ "$gas_used" != "null" ] && [ "$gas_used" != "0" ]; then
-            echo "  🔥 GAS USED: $gas_used units (Block: $height)"
-            echo "$gas_used"
-            return 0
-        else
-            echo "  → Still processing... (Height: $height, Gas: $gas_used)"
-        fi
-        
-        attempt=$((attempt + 1))
-    done
-    
-    echo "  ⚠️ Could not determine gas usage after $max_attempts attempts"
-    echo "0"
-}
+# =========================
+# 1. EOTS setup
+# =========================
 
-echo "🚀 Starting Rollup BSN Demo"
-echo "============================="
+echo "Init babylon eots keys..."
+babylon_eotsd_pk=$(docker exec -t babylon-eots /bin/sh -c '
+  yes y | eotsd keys add babylon-key --home=/home/babylonEotsHome --keyring-backend=test --rpc-client "127.0.0.1:15813" --output=json
+' | sed -n '/^{/,/^}/p' | jq -r '.pubkey_hex')
+echo "babylon-eotsd-pk: $babylon_eotsd_pk"
 
-# Build the crypto operations tool first
-echo "🔧 Building crypto operations tool..."
-cd crypto-ops-tool
-go build -o ../crypto-ops ./cmd/crypto-ops
-cd ../
-echo "  ✅ Crypto operations tool built successfully"
+echo "--------------------------------"
+echo "Init anvil eots keys..."
+anvil_eotsd_pk=$(docker exec -t anvil-eots /bin/sh -c '
+  yes y | eotsd keys add anvil-key --home=/home/anvilEotsHome --keyring-backend=test --rpc-client "127.0.0.1:15817" --output=json
+' | sed -n '/^{/,/^}/p' | jq -r '.pubkey_hex')
+echo "anvil-eotsd-pk: $anvil_eotsd_pk"
+echo "--------------------------------"
+# =========================
+# 2. Babylon FP setup
+# =========================
 
-# Get admin address for contract instantiation
-echo "  → Getting admin address..."
-ADMIN_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to get admin address"
-    echo "  Error: $ADMIN_OUTPUT"
-    exit 1
+# Restart babylon-fp container so it picks up keys and config
+echo "Restarting babylon-fp container..."
+docker restart babylon-fp
+
+# Predefined FP address matching babylon-fp keyring (example address)
+FP_ADDRESS="bbn1mnas3qgsfs6lhh2k2kykew036uk2asu4hwggxs"
+
+echo "Using predefined Babylon FP address: $FP_ADDRESS"
+
+# Fund babylon fp address
+bash ./scripts/fund-address.sh "$FP_ADDRESS"
+
+# Wait a few seconds for the container and fpd daemon to fully start
+sleep 5
+
+# Run create-finality-provider inside babylon-fp container
+docker exec babylon-fp rollup-fpd create-finality-provider \
+  --daemon-address 127.0.0.1:45661 \
+  --chain-id chain-test \
+  --eots-pk "$babylon_eotsd_pk" \
+  --commission-rate 0.05 \
+  --commission-max-change-rate 0.01 \
+  --commission-max-rate 0.20 \
+  --key-name babylon-key \
+  --moniker "Babylon FP" \
+  --website "https://myfinalityprovider.com" \
+  --security-contact "security@myfinalityprovider.com" \
+  --details "finality provider for the Babylon network" \
+  --home /home/babylonFpHome
+
+# Restart babylon-fp container so it picks up keys and config
+echo "Restarting babylon-fp container..."
+docker restart babylon-fp
+
+# Print Babylon FP info and save output
+output=$(bash ./scripts/print-babylon-fp.sh)
+btc_pk=$(echo "$output" | tail -n +2 | jq -r '.[0].btc_pk')
+echo "Babylon FP BTC Public Key: $btc_pk"
+
+#echo "--------------------------------"
+
+# =========================
+# 3. Deploy Rollup BSN Contract
+# =========================
+
+# Run deploy script and capture its output
+deploy_output=$(bash ./scripts/deploy-finality-contract.sh)
+echo "$deploy_output"
+
+# Extract finality contract address from output
+finalityContractAddr=$(echo "$deploy_output" | grep "✅ Finality contract deployed at:" | awk -F": " '{print $2}')
+echo "Saved finality contract address: $finalityContractAddr"
+
+# Update config with deployed contract address
+FPD_CONF="./.testnets/anvil-fp/fpd.conf"
+if [[ "$(uname)" == "Darwin" ]]; then
+  sed -i '' "s|^FinalityContractAddress *=.*|FinalityContractAddress = $finalityContractAddr|" "$FPD_CONF"
+else
+  sed -i "s|^FinalityContractAddress *=.*|FinalityContractAddress = $finalityContractAddr|" "$FPD_CONF"
 fi
 
-admin=$(echo "$ADMIN_OUTPUT" | jq -r '.address')
-if [ "$admin" = "null" ] || [ -z "$admin" ]; then
-    echo "  ❌ Failed to parse admin address"
-    echo "  Query output: $ADMIN_OUTPUT"
-    exit 1
-fi
+# =========================
+# 4. Register Consumer BSN
+# =========================
 
-echo "Using admin address: $admin"
+# Register consumer with finality contract
+bash ./scripts/register-consumer.sh "$finalityContractAddr"
+
+# =========================
+# 5. Anvil FP setup
+# =========================
+
+# Restart anvil-fp container so it picks up keys and config
+echo "Restarting anvil-fp container..."
+docker restart anvil-fp
+
+# Predefined FP address matching babylon-fp keyring (example address)
+FP_ADDRESS="bbn1y7q0wsl6ff7wq9p8m7m9kmp3t5rqdg5c0d2vgd"
+
+echo "Using predefined anvil FP address: $FP_ADDRESS"
+
+# Fund babylon fp address
+bash ./scripts/fund-address.sh "$FP_ADDRESS"
+
+# Wait a few seconds for the container and fpd daemon to fully start
+sleep 5
+
+# Run create-finality-provider inside anvil-fp container
+docker exec anvil-fp fpd create-finality-provider \
+  --daemon-address 127.0.0.1:45662 \
+  --chain-id 31337 \
+  --eots-pk "$anvil_eotsd_pk" \
+  --commission-rate 0.05 \
+  --commission-max-change-rate 0.01 \
+  --commission-max-rate 0.20 \
+  --key-name anvil-key \
+  --moniker "Anvil FP" \
+  --website "https://myfinalityprovider.com" \
+  --security-contact "security@myfinalityprovider.com" \
+  --details "finality provider for the Anvil network" \
+  --home /home/anvilFpHome
+
+# Restart anvil-fp container so it picks up keys and config
+echo "Restarting anvil-fp container..."
+docker restart anvil-fp
 
 sleep 5
 
-###############################
-# Step 1: Deploy Finality     #
-# Contract                    #
-###############################
+# Print Anvil FP info and save output
+output=$(bash ./scripts/print-anvil-fp.sh)
+anvil_btc_pk=$(echo "$output" | tail -n +2 | jq -r '.[0].btc_pk')
+echo "Anvil FP BTC Public Key: $anvil_btc_pk"
 
-echo ""
-echo "📋 Step 1: Deploying finality contract..."
+# =========================
+# 6. Add Finality Providers to Allowlist
+# =========================
+echo "anvil_btc_pk: $anvil_btc_pk (length: ${#anvil_btc_pk})"
 
-echo "  → Storing contract WASM..."
-STORE_CMD="/bin/babylond --home /babylondhome tx wasm store /contracts/finality.wasm --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
-echo "  → Command: $STORE_CMD"
-STORE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$STORE_CMD")
-echo "  → Output: $STORE_OUTPUT"
+allowlist_msg=$(cat <<EOF
+{
+  "add_to_allowlist": {
+    "fp_pubkey_hex_list": [
+      "$anvil_btc_pk"
+    ]
+  }
+}
+EOF
+)
 
-# Extract transaction hash and measure gas
-STORE_TX_HASH=$(echo "$STORE_OUTPUT" | jq -r '.txhash')
-measure_gas "$STORE_TX_HASH" "Store Contract WASM"
-echo "  ✅ Contract WASM stored successfully!"
+echo "Adding finality providers to allowlist…"
+ALLOW_JSON=$(docker exec babylondnode0 sh -c \
+  "babylond --home $HOME_DIR tx wasm execute $finalityContractAddr '$allowlist_msg' \
+     --from $ADMIN_KEY --chain-id $BBN_CHAIN_ID --keyring-backend test \
+     --gas auto --gas-adjustment 1.3 \
+     --fees 1000000ubbn \
+     --broadcast-mode sync \
+     --output json -y")
+echo ">>> raw output <<<"
+echo "$ALLOW_JSON"
 
-echo "  → Instantiating contract..."
-echo "  → Using min_pub_rand=$MIN_PUB_RAND (minimum randomness commitments required)"
-INSTANTIATE_MSG_JSON="{\"admin\":\"$admin\",\"bsn_id\":\"$CONSUMER_ID\",\"min_pub_rand\":$MIN_PUB_RAND}"
-INSTANTIATE_CMD="/bin/babylond --home /babylondhome tx wasm instantiate 1 '$INSTANTIATE_MSG_JSON' --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --label 'finality' --admin $admin --from test-spending-key --output json -y"
-echo "  → Command: $INSTANTIATE_CMD"
-INSTANTIATE_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$INSTANTIATE_CMD")
-echo "  → Output: $INSTANTIATE_OUTPUT"
-
-# Extract transaction hash and measure gas
-INSTANTIATE_TX_HASH=$(echo "$INSTANTIATE_OUTPUT" | jq -r '.txhash')
-measure_gas "$INSTANTIATE_TX_HASH" "Instantiate Contract"
-
-# Extract contract address
-echo "  → Getting contract address..."
-CONTRACT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm list-contracts-by-code 1 --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to get contract address"
-    echo "  Error: $CONTRACT_OUTPUT"
-    exit 1
+# Quick error bail if CosmWasm returned a code field
+if echo "$ALLOW_JSON" | jq -e 'has("code") and .code != 0' >/dev/null; then
+  echo "❌ execute failed: $(echo "$ALLOW_JSON" | jq -r '.raw_log')"
+  exit 1
 fi
 
-finalityContractAddr=$(echo "$CONTRACT_OUTPUT" | jq -r '.contracts[0]')
-if [ "$finalityContractAddr" = "null" ] || [ -z "$finalityContractAddr" ]; then
-    echo "  ❌ Failed to parse contract address"
-    echo "  Query output: $CONTRACT_OUTPUT"
-    exit 1
+# Grab the txhash and query its full result
+ALLOW_TX=$(echo "$ALLOW_JSON" | jq -r '.txhash')
+echo "✔️ got txhash: $ALLOW_TX"
+echo "Fetching full tx result…"
+TX_JSON=$(docker exec babylondnode0 babylond --home $HOME_DIR query tx $ALLOW_TX \
+  --chain-id $BBN_CHAIN_ID -o json 2>/dev/null)
+
+echo "Full tx result:"
+echo "$TX_JSON" | jq .
+
+# If the on‑chain query shows an error, print logs and exit
+if echo "$TX_JSON" | jq -e '.code != 0' >/dev/null; then
+  echo "❌ on‑chain query failed: $(echo "$TX_JSON" | jq -r '.raw_log')"
+  exit 1
 fi
 
-echo "  ✅ Finality contract deployed at: $finalityContractAddr"
-
-###############################
-# Step 2: Register Consumer   #
-###############################
-
-echo ""
-echo "🔗 Step 2: Registering consumer chain..."
-
-REGISTER_CMD="/bin/babylond --home /babylondhome tx btcstkconsumer register-consumer $CONSUMER_ID consumer-name consumer-description $finalityContractAddr --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
-echo "  → Command: $REGISTER_CMD"
-REGISTER_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$REGISTER_CMD")
-echo "  → Output: $REGISTER_OUTPUT"
-
-# Extract transaction hash and measure gas
-REGISTER_TX_HASH=$(echo "$REGISTER_OUTPUT" | jq -r '.txhash')
-measure_gas "$REGISTER_TX_HASH" "Register Consumer"
-echo "  ✅ Consumer '$CONSUMER_ID' registered successfully"
-
-###############################
-# Step 3: Generate Crypto Keys#
-###############################
-
-echo ""
-echo "🔐 Step 3: Generating cryptographic keys..."
-
-echo "  → Generating BTC key pairs for finality providers..."
-
-# Generate key pairs using the Go tool and parse JSON output
-echo "  → Generating Babylon FP keypair..."
-bbn_fp_json=$(./crypto-ops generate-keypair)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to generate Babylon FP keypair"
-    exit 1
-fi
-bbn_btc_pk=$(echo "$bbn_fp_json" | jq -r '.public_key')
-bbn_btc_sk=$(echo "$bbn_fp_json" | jq -r '.private_key')
-
-echo "  → Generating Consumer FP keypair..."
-consumer_fp_json=$(./crypto-ops generate-keypair)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to generate Consumer FP keypair"
-    exit 1
-fi
-consumer_btc_pk=$(echo "$consumer_fp_json" | jq -r '.public_key')
-consumer_btc_sk=$(echo "$consumer_fp_json" | jq -r '.private_key')
-
-echo "  ✅ Babylon FP BTC PK: $bbn_btc_pk"
-echo "  ✅ Babylon FP BTC SK: $bbn_btc_sk"
-echo "  ✅ Consumer FP BTC PK: $consumer_btc_pk"
-echo "  ✅ Consumer FP BTC SK: $consumer_btc_sk"
-
-###############################
-# Step 4: Create Finality     #
-# Providers                   #
-###############################
-
-echo ""
-echo "👥 Step 4: Creating finality providers on-chain..."
-
-# Get admin address for PoP generation
-echo "  → Getting admin address for PoP generation..."
-ADMIN_POP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome keys show test-spending-key --keyring-backend test --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to get admin address for PoP"
-    echo "  Error: $ADMIN_POP_OUTPUT"
-    exit 1
-fi
-
-admin=$(echo "$ADMIN_POP_OUTPUT" | jq -r '.address')
-if [ "$admin" = "null" ] || [ -z "$admin" ]; then
-    echo "  ❌ Failed to parse admin address for PoP"
-    echo "  Query output: $ADMIN_POP_OUTPUT"
-    exit 1
-fi
-
-echo "  → Using admin address for PoP: $admin"
-
-echo "  → Creating Babylon Finality Provider..."
-
-# Generate PoP for Babylon FP using crypto-ops
-echo "  → Generating PoP for Babylon FP..."
-bbn_pop_json=$(./crypto-ops generate-pop $bbn_btc_sk $admin $BBN_CHAIN_ID)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to generate PoP for Babylon FP"
-    exit 1
-fi
-bbn_pop_hex=$(echo "$bbn_pop_json" | jq -r '.pop_hex')
-
-sleep 15
-
-# Create Babylon FP on-chain
-BBN_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $bbn_btc_pk $bbn_pop_hex --from test-spending-key --moniker 'Babylon FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
-echo "  → Command: $BBN_FP_CMD"
-BBN_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$BBN_FP_CMD")
-echo "  → Output: $BBN_FP_OUTPUT"
-
-# Extract transaction hash and measure gas
-BBN_FP_TX_HASH=$(echo "$BBN_FP_OUTPUT" | jq -r '.txhash')
-measure_gas "$BBN_FP_TX_HASH" "Create Babylon Finality Provider"
-echo "  ✅ Babylon FP created successfully"
-
-echo "  → Creating Consumer Finality Provider..."
-
-# Generate PoP for Consumer FP using crypto-ops
-echo "  → Generating PoP for Consumer FP..."
-consumer_pop_json=$(./crypto-ops generate-pop $consumer_btc_sk $admin $BBN_CHAIN_ID)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to generate PoP for Consumer FP"
-    exit 1
-fi
-consumer_pop_hex=$(echo "$consumer_pop_json" | jq -r '.pop_hex')
-
-# Create Consumer FP on-chain (note the --bsn-id flag)
-CONSUMER_FP_CMD="/bin/babylond --home /babylondhome tx btcstaking create-finality-provider $consumer_btc_pk $consumer_pop_hex --from test-spending-key --moniker 'Consumer FP' --commission-rate 0.05 --commission-max-rate 0.10 --commission-max-change-rate 0.01 --bsn-id $CONSUMER_ID --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn --output json -y"
-echo "  → Command: $CONSUMER_FP_CMD"
-CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$CONSUMER_FP_CMD")
-echo "  → Output: $CONSUMER_FP_OUTPUT"
-
-# Extract transaction hash and measure gas
-CONSUMER_FP_TX_HASH=$(echo "$CONSUMER_FP_OUTPUT" | jq -r '.txhash')
-measure_gas "$CONSUMER_FP_TX_HASH" "Create Consumer Finality Provider"
-echo "  ✅ Consumer FP created successfully"
-
-# Verify FPs were created
-echo "  → Verifying finality providers..."
-
-# Query Babylon BSN finality providers (no bsn_id defaults to chain ID)
-echo "  → Querying Babylon BSN finality providers..."
-BBN_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to query Babylon BSN finality providers"
-    echo "  Error: $BBN_FP_OUTPUT"
-    exit 1
-fi
-
-bbn_fp_count=$(echo "$BBN_FP_OUTPUT" | jq -r '.finality_providers | length')
-if [ "$bbn_fp_count" = "null" ] || [ -z "$bbn_fp_count" ]; then
-    echo "  ❌ Failed to parse Babylon BSN finality providers count"
-    echo "  Query output: $BBN_FP_OUTPUT"
-    exit 1
-fi
-
-# Query Consumer BSN finality providers by specifying the bsn_id
-echo "  → Querying Consumer BSN finality providers..."
-CONSUMER_FP_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q btcstaking finality-providers $CONSUMER_ID --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to query Consumer BSN finality providers"
-    echo "  Error: $CONSUMER_FP_OUTPUT"
-    exit 1
-fi
-
-consumer_fp_count=$(echo "$CONSUMER_FP_OUTPUT" | jq -r '.finality_providers | length')
-if [ "$consumer_fp_count" = "null" ] || [ -z "$consumer_fp_count" ]; then
-    echo "  ❌ Failed to parse Consumer BSN finality providers count"
-    echo "  Query output: $CONSUMER_FP_OUTPUT"
-    exit 1
-fi
-
-echo "  ✅ Babylon finality providers: $bbn_fp_count"
-echo "  ✅ Consumer finality providers: $consumer_fp_count"
-
-###############################
-# Step 5: Stake BTC           #
-###############################
-
-echo ""
-echo "₿ Step 5: Creating BTC delegation..."
-
-echo "  → Getting available BTC addresses..."
-delAddrs=($(docker exec btc-staker /bin/sh -c '/bin/stakercli dn list-outputs | jq -r ".outputs[].address" | sort | uniq'))
-stakingTime=10000
-stakingAmount=1000000  # 1M satoshis
-
-echo "  → Delegating $stakingAmount satoshis for $stakingTime blocks..."
-echo "    From: ${delAddrs[0]}"
-echo "    To FPs: Babylon ($bbn_btc_pk) + Consumer ($consumer_btc_pk)"
-
-btcTxHash=$(docker exec btc-staker /bin/sh -c "/bin/stakercli dn stake --staker-address ${delAddrs[0]} --staking-amount $stakingAmount --finality-providers-pks $bbn_btc_pk --finality-providers-pks $consumer_btc_pk --staking-time $stakingTime | jq -r '.tx_hash'")
-
-if [ -z "$btcTxHash" ] || [ "$btcTxHash" = "null" ]; then
-    echo "  ❌ Failed to create BTC delegation"
-    exit 1
-fi
-
-echo "  ✅ BTC delegation created: $btcTxHash"
-
-###############################
-# Step 6: Wait for Activation #
-###############################
-
-echo ""
-echo "⏳ Step 6: Waiting for delegation activation..."
-
-echo "  → Monitoring delegation status..."
-for i in {1..30}; do
-    DELEGATION_OUTPUT=$(docker exec babylondnode0 /bin/sh -c 'babylond q btcstaking btc-delegations active -o json' 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "    ❌ Attempt $i/30: Failed to query active delegations"
-        echo "    Error: $DELEGATION_OUTPUT"
-        echo "    Retrying in 10 seconds..."
-        sleep 10
-        continue
-    fi
-    
-    activeDelegations=$(echo "$DELEGATION_OUTPUT" | jq '.btc_delegations | length')
-    if [ "$activeDelegations" = "null" ] || [ -z "$activeDelegations" ]; then
-        echo "    ❌ Attempt $i/30: Failed to parse active delegations count"
-        echo "    Query output: $DELEGATION_OUTPUT"
-        echo "    Retrying in 10 seconds..."
-        sleep 10
-        continue
-    fi
-    
-    if [ "$activeDelegations" -eq 1 ]; then
-        echo "  ✅ Delegation activated successfully!"
-        break
-    fi
-    
-    echo "    Attempt $i/30: $activeDelegations active delegations, waiting..."
-    sleep 10
-done
-
-if [ "$activeDelegations" -ne 1 ]; then
-    echo "  ⚠️ Warning: Delegation not activated after 5 minutes"
-    echo "  Proceeding with demo anyway..."
-fi
-
-###############################
-# Step 7: Commit & Finalize   #
-###############################
-
-echo ""
-echo "🎲 Step 7a: Generating and committing public randomness..."
-
-# Configure parameters for crypto operations
-start_height=1
-num_pub_rand=50000  # Commit randomness for 50,000 blocks (similar to mainnet)
-num_finality_sigs=3  # Submit finality signatures for first 3 blocks
-
-echo "  → Using crypto-ops to generate randomness (crypto-only)..."
-echo "    Start height: $start_height, Number of commitments: $num_pub_rand"
-
-# Step 7a: Generate public randomness commitment data using crypto-only command
-echo "  → Generating public randomness commitment data for blocks $start_height to $((start_height + num_pub_rand - 1))..."
-pub_rand_data=$(./crypto-ops generate-pub-rand-commitment $consumer_btc_sk $finalityContractAddr $CONSUMER_ID $start_height $num_pub_rand)
-
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to generate public randomness commitment data"
-    exit 1
-fi
-
-echo "  ✅ Public randomness commitment data generated successfully!"
-
-# Extract data from JSON response  
-rand_list_info_json=$(echo "$pub_rand_data" | jq -r '.rand_list_info')
-fp_pubkey_hex=$(echo "$pub_rand_data" | jq -r '.fp_pubkey_hex')
-commitment=$(echo "$pub_rand_data" | jq -c '.commitment')  # Keep as JSON array
-signature=$(echo "$pub_rand_data" | jq -c '.signature')    # Keep as JSON array
-
-echo "  → Submitting commitment to finality contract..."
-echo "    Contract: $finalityContractAddr"
-echo "    FP PubKey: $fp_pubkey_hex"
-echo "    Commitment: $commitment"
-
-# Create the commit message for the finality contract  
-commit_msg=$(jq -n \
-  --arg fp_pubkey_hex "$fp_pubkey_hex" \
-  --argjson start_height "$start_height" \
-  --argjson num_pub_rand "$num_pub_rand" \
-  --argjson commitment "$commitment" \
-  --argjson signature "$signature" \
-  '{
-    commit_public_randomness: {
-      fp_pubkey_hex: $fp_pubkey_hex,
-      start_height: $start_height,
-      num_pub_rand: $num_pub_rand,
-      commitment: $commitment,
-      signature: $signature
-    }
-  }')
-
-# Submit to finality contract using wasm execute
-COMMIT_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$commit_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn -y --output json"
-echo "  → Command: $COMMIT_CMD"
-COMMIT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$COMMIT_CMD")
-echo "  → Output: $COMMIT_OUTPUT"
-
-# Extract transaction hash and measure gas
-COMMIT_TX_HASH=$(echo "$COMMIT_OUTPUT" | jq -r '.txhash')
-echo "  → Commit TX Hash: $COMMIT_TX_HASH"
-
-# Measure gas consumption
-measure_gas "$COMMIT_TX_HASH" "Public Randomness Commitment"
-
-# Verify the commitment was stored
-echo "  → Verifying commitment was stored..."
-query_msg=$(jq -n --arg btc_pk_hex "$fp_pubkey_hex" '{last_pub_rand_commit: {btc_pk_hex: $btc_pk_hex}}')
-VERIFY_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$query_msg' --output json"
-VERIFY_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_CMD")
-echo "  → Verification result: $VERIFY_OUTPUT"
-
-echo "  ✅ Public randomness committed successfully for $num_pub_rand blocks!"
-
-echo ""
-echo "⏳ Step 7b: Waiting for BTC timestamping..."
-echo "  ℹ️  The finality contract requires public randomness commitments to be BTC-timestamped"
-echo "  ℹ️  before accepting finality signatures. This ensures cryptographic security."
-
-# Query the last public randomness commitment to get its babylon_epoch
-echo "  → Querying last public randomness commitment..."
-query_msg=$(jq -n --arg btc_pk_hex "$fp_pubkey_hex" '{last_pub_rand_commit: {btc_pk_hex: $btc_pk_hex}}')
-LAST_COMMIT_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$query_msg' --output json" 2>&1)
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to query last public randomness commitment"
-    echo "  Error: $LAST_COMMIT_OUTPUT"
-    exit 1
-fi
-echo "  → Last commit query result: $LAST_COMMIT_OUTPUT"
-
-# Extract the babylon_epoch from the commitment
-committed_epoch=$(echo "$LAST_COMMIT_OUTPUT" | jq -r '.data.babylon_epoch')
-if [ "$committed_epoch" = "null" ] || [ -z "$committed_epoch" ]; then
-    echo "  ❌ Failed to get committed epoch from contract"
-    echo "  Query output: $LAST_COMMIT_OUTPUT"
-    exit 1
-fi
-
-echo "  → Committed randomness epoch: $committed_epoch"
-
-# Wait for this epoch to be finalized by BTC timestamping
-echo "  → Waiting for epoch $committed_epoch to be finalized by BTC timestamping..."
-echo "  → This ensures the cryptographic security of finality signatures"
-max_wait_attempts=60  # Wait up to 10 minutes (60 * 10 seconds)
-wait_attempt=0
-
-while [ $wait_attempt -lt $max_wait_attempts ]; do
-    wait_attempt=$((wait_attempt + 1))
-    
-    # Query Babylon's last finalized epoch using raw-checkpoint-list
-    FINALIZED_EPOCH_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "/bin/babylond --home /babylondhome q checkpointing raw-checkpoint-list CKPT_STATUS_FINALIZED --reverse --limit 1 --output json" 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "    → Attempt $wait_attempt/$max_wait_attempts: Failed to query finalized epoch, retrying..."
-        echo "    Error: $FINALIZED_EPOCH_OUTPUT"
-        sleep 10
-        continue
-    fi
-    
-    # Extract the epoch number from the most recent finalized checkpoint
-    last_finalized_epoch=$(echo "$FINALIZED_EPOCH_OUTPUT" | jq -r '.raw_checkpoints[0].ckpt.epoch_num // 0')
-    if [ "$last_finalized_epoch" = "null" ] || [ -z "$last_finalized_epoch" ]; then
-        echo "    → Attempt $wait_attempt/$max_wait_attempts: Failed to parse finalized epoch, retrying..."
-        echo "    Query output: $FINALIZED_EPOCH_OUTPUT"
-        sleep 10
-        continue
-    fi
-    
-    echo "    → Attempt $wait_attempt/$max_wait_attempts: Committed epoch=$committed_epoch, Finalized epoch=$last_finalized_epoch"
-    
-    # Check if the committed epoch is now finalized
-    if [ "$last_finalized_epoch" -ge "$committed_epoch" ]; then
-        echo "  ✅ Epoch $committed_epoch has been finalized! (Last finalized: $last_finalized_epoch)"
-        break
-    fi
-    
-    echo "    → Waiting... (need epoch $committed_epoch to be finalized, currently $last_finalized_epoch)"
-    sleep 10
-done
-
-if [ "$last_finalized_epoch" -lt "$committed_epoch" ]; then
-    echo "  ⚠️  Warning: Epoch $committed_epoch not finalized after $((max_wait_attempts * 10)) seconds"
-    echo "  ⚠️  Committed epoch: $committed_epoch, Last finalized: $last_finalized_epoch"
-    echo "  ⚠️  Proceeding anyway - finality signatures may fail..."
-fi
-
-echo ""
-echo "✍️ Step 7c: Generating and submitting finality signatures..."
-
-# Step 7b: Generate and submit finality signatures for multiple blocks
-echo "  → Processing $num_finality_sigs blocks using crypto-only approach..."
-echo "    Processing blocks $start_height to $((start_height + num_finality_sigs - 1))"
-
-# Counter for successful submissions
-successful_sigs=0
-
-# Loop through blocks and generate + submit finality signatures
-for ((block_height=start_height; block_height<start_height+num_finality_sigs; block_height++)); do
-    echo "  → [$((block_height - start_height + 1))/$num_finality_sigs] Processing block $block_height..."
-    
-    # Generate finality signature using crypto-only command (block hash generated internally)
-    echo "    → Generating finality signature (crypto-only)..."
-    finality_sig_data=$(echo "$rand_list_info_json" | ./crypto-ops generate-finality-sig $consumer_btc_sk $finalityContractAddr $CONSUMER_ID $block_height)
-    
-    if [ $? -ne 0 ]; then
-        echo "    ❌ Block $block_height: Failed to generate finality signature"
-        echo "  💥 Finality signature generation failed - stopping batch processing"
-        echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
-        exit 1
-    fi
-    
-    # Extract signature data from JSON response (using proper JSON handling)
-    sig_fp_pubkey_hex=$(echo "$finality_sig_data" | jq -r '.fp_pubkey_hex')
-    sig_height=$(echo "$finality_sig_data" | jq -r '.height')
-    sig_pub_rand=$(echo "$finality_sig_data" | jq -c '.pub_rand')          # Keep as JSON array
-    sig_proof=$(echo "$finality_sig_data" | jq -c '.proof')                # Keep as JSON object
-    sig_block_hash=$(echo "$finality_sig_data" | jq -c '.block_hash')      # Keep as JSON array
-    sig_signature=$(echo "$finality_sig_data" | jq -c '.signature')        # Keep as JSON array
-    
-    echo "    → Submitting finality signature to contract..."
-    
-    # Create finality signature message for the contract
-    finality_msg=$(jq -n \
-      --arg fp_pubkey_hex "$sig_fp_pubkey_hex" \
-      --argjson height "$sig_height" \
-      --argjson pub_rand "$sig_pub_rand" \
-      --argjson proof "$sig_proof" \
-      --argjson block_hash "$sig_block_hash" \
-      --argjson signature "$sig_signature" \
-      '{
-        submit_finality_signature: {
-          fp_pubkey_hex: $fp_pubkey_hex,
-          height: $height,
-          pub_rand: $pub_rand,
-          proof: $proof,
-          block_hash: $block_hash,
-          signature: $signature
-        }
-      }')
-    
-    # Submit to finality contract using wasm execute
-    FINALITY_CMD="/bin/babylond --home /babylondhome tx wasm execute $finalityContractAddr '$finality_msg' --from test-spending-key --chain-id $BBN_CHAIN_ID --keyring-backend test --gas auto --gas-adjustment 1.5 --gas-prices 1ubbn -y --output json"
-    FINALITY_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$FINALITY_CMD")
-    echo "    → Submission result: $FINALITY_OUTPUT"
-    
-    # Extract transaction hash and measure gas
-    FINALITY_TX_HASH=$(echo "$FINALITY_OUTPUT" | jq -r '.txhash')
-    echo "    → Finality TX Hash: $FINALITY_TX_HASH"
-    
-    # Measure gas consumption for this finality signature
-    measure_gas "$FINALITY_TX_HASH" "Finality Signature Block $block_height"
-    echo "    → Verifying finality signature was recorded..."
-    
-    # Use the hex string directly from Go output (much simpler!)
-    block_hash_hex=$(echo "$finality_sig_data" | jq -r '.block_hash_hex')
-    
-    # Retry verification up to 5 times with delays
-    verification_success=false
-    for verification_attempt in {1..5}; do
-        echo "    → Verification attempt $verification_attempt/5..."
-        verify_msg=$(jq -n --argjson height "$sig_height" --arg hash_hex "$block_hash_hex" '{block_voters: {height: $height, hash_hex: $hash_hex}}')
-        VERIFY_SIG_CMD="/bin/babylond --home /babylondhome q wasm contract-state smart $finalityContractAddr '$verify_msg' --output json"
-        VERIFY_SIG_OUTPUT=$(docker exec babylondnode0 /bin/sh -c "$VERIFY_SIG_CMD")
-        
-        # Check if data is not null and contains our FP
-        if echo "$VERIFY_SIG_OUTPUT" | jq -e '.data != null' >/dev/null && echo "$VERIFY_SIG_OUTPUT" | jq -r '.data[]' | grep -q "$sig_fp_pubkey_hex"; then
-            verification_success=true
-            echo "    ✅ Verification succeeded on attempt $verification_attempt"
-            break
-        else
-            echo "    → Attempt $verification_attempt failed, data: $(echo "$VERIFY_SIG_OUTPUT" | jq -r '.data')"
-            if [ $verification_attempt -lt 5 ]; then
-                echo "    → Waiting 5 seconds before retry..."
-                sleep 5
-            fi
-        fi
-    done
-    
-    if [ "$verification_success" = false ]; then
-        echo "    ❌ Block $block_height: Finality signature verification failed"
-        echo "    → Verification output: $VERIFY_SIG_OUTPUT"
-        echo "  💥 Finality signature verification failed - stopping batch processing"
-        echo "  📊 Final status: $successful_sigs/$num_finality_sigs blocks processed successfully before failure"
-        exit 1
-    else
-        ((successful_sigs++))
-        echo "    ✅ Block $block_height: Finality signature submitted and verified successfully"
-    fi
-    
-    # Add small delay to avoid overwhelming the system
-    sleep 2  # Reduced since we have longer delays in verification
-done
-
-echo ""
-echo "🎉 All $num_finality_sigs finality signatures processed successfully!"
-echo "  📊 Successfully processed blocks $start_height to $((start_height + num_finality_sigs - 1))"
-
-###############################
-# Demo Summary                #
-###############################
-
-echo ""
-echo "🎉 BTC Staking Integration Demo Complete!"
-echo "=========================================="
-echo ""
-echo "✅ Finality contract deployed: $finalityContractAddr"
-echo "✅ Consumer chain registered: $CONSUMER_ID"
-echo "✅ Finality providers created: $bbn_fp_count Babylon + $consumer_fp_count Consumer"
-echo "✅ BTC delegation active: $btcTxHash ($activeDelegations active)"
-echo "✅ Public randomness committed: blocks $start_height-$((start_height + num_pub_rand - 1)) ($num_pub_rand total)"
-echo "✅ Finality signatures processed: $successful_sigs/$num_finality_sigs blocks (blocks $start_height-$((start_height + num_finality_sigs - 1)))"
-
+echo "✅ tx succeeded, logs above"
+sleep 10
+
+# =========================
+# 7. Delegate BTC to Anvil FP
+# =========================
+
+# Delegate BTC using the extracted anvil_btc_pk and btc_pk
+bash ./scripts/delegate-btc-anvil-fp.sh "$anvil_btc_pk" "$btc_pk"
+echo "--------------------------------"
+
+# =========================
+# 8. Verify FP signatures and public randomness
+# =========================
+# Wait a few seconds for FP to start submitting signatures
+echo "Waiting for FP to start submitting signatures..."
+sleep 60
+
+bash ./scripts/verify-fp-signatures.sh "$finalityContractAddr"
