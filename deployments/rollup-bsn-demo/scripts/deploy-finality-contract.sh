@@ -45,6 +45,8 @@ INSTANT_MSG='{
   "min_pub_rand": 1, 
   "rate_limiting_interval": 100, 
   "max_msgs_per_interval": 1000, 
+  "bsn_activation_height": 1,
+  "finality_signature_interval": 1,
   "is_enabled": true
 }'
 INSTANT_JSON=$(docker exec babylondnode0 sh -c \
