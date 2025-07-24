@@ -138,7 +138,7 @@ $BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BABYLON_CONTRACT_CODE_FILE" $K
 sleep 5
 BABYLON_CODE_ID=1
 
-# Store btc light client contract  
+# Store btc light client contract
 echo "Storing btc light client contract code..."
 $BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTC_LC_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
 sleep 5
@@ -187,7 +187,6 @@ BABYLON_INIT_MSG='{
   "btc_staking_msg": "'$BTC_STAKING_INIT_MSG_B64'",
   "btc_finality_code_id": '$BTC_FINALITY_CODE_ID',
   "btc_finality_msg": "'$BTC_FINALITY_INIT_MSG_B64'",
-  "btc_light_client_initial_header": "{\"header\": {\"version\": 536870912, \"prev_blockhash\": \"000000c0a3841a6ae64c45864ae25314b40fd522bfb299a4b6bd5ef288cae74d\", \"merkle_root\": \"e666a9797b7a650597098ca6bf500bd0873a86ada05189f87073b6dfdbcaf4ee\", \"time\": 1599332844, \"bits\": 503394215, \"nonce\": 9108535}, \"height\": 2016, \"total_work\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkY98OU=\"}",
   "consumer_name": "test-consumer",
   "consumer_description": "test-consumer-description"
 }'
@@ -199,6 +198,7 @@ sleep 10
 
 # Extract contract addresses from transaction logs
 echo "Querying contract addresses..."
+echo "$INSTANTIATE_RESP"
 TX_HASH=$(echo "$INSTANTIATE_RESP" | jq -r '.txhash')
 sleep 5
 
@@ -217,7 +217,7 @@ done
 # Assign contract addresses based on the order they were instantiated
 # 1st: Babylon contract (the main one we instantiated)
 # 2nd: BTC Light Client contract (instantiated by Babylon contract)
-# 3rd: BTC Staking contract (instantiated by Babylon contract)  
+# 3rd: BTC Staking contract (instantiated by Babylon contract)
 # 4th: BTC Finality contract (instantiated by Babylon contract)
 if [ ${#CONTRACT_ADDRESSES[@]} -ge 4 ]; then
     BABYLON_ADDR=${CONTRACT_ADDRESSES[0]}
@@ -233,7 +233,7 @@ fi
 
 echo "Contract addresses:"
 echo "Babylon: $BABYLON_ADDR"
-echo "BTC Light Client: $BTC_LC_ADDR" 
+echo "BTC Light Client: $BTC_LC_ADDR"
 echo "BTC Staking: $BTC_STAKING_ADDR"
 echo "BTC Finality: $BTC_FINALITY_ADDR"
 
@@ -273,7 +273,7 @@ cat > "$PROPOSAL_FILE" << EOF
     }
   ],
   "metadata": "Set BSN Contracts",
-  "title": "Set BSN Contracts", 
+  "title": "Set BSN Contracts",
   "summary": "Set contract addresses for Babylon system",
   "deposit": "1000000stake"
 }
@@ -308,7 +308,7 @@ if [ -z "$PROPOSAL_ID" ] || [ "$PROPOSAL_ID" = "null" ]; then
     # Try alternative extraction method
     PROPOSAL_ID=$(echo "$PROPOSAL_TX_RESULT" | jq -r '.events[] | select(.type=="message") | .attributes[] | select(.key=="proposal_id") | .value')
     echo "Alternative proposal ID: '$PROPOSAL_ID'"
-    
+
     if [ -z "$PROPOSAL_ID" ] || [ "$PROPOSAL_ID" = "null" ]; then
         echo "Error: Could not extract proposal ID from transaction"
         echo "Full transaction result:"
@@ -329,7 +329,7 @@ echo "Waiting for proposal to pass..."
 while true; do
     PROPOSAL_STATUS=$($BINARY --home $CHAINDIR/$CHAINID query gov proposal $PROPOSAL_ID --node http://localhost:$RPCPORT --output json | jq -r '.proposal.status')
     echo "  → Current proposal status: $PROPOSAL_STATUS"
-    
+
     case "$PROPOSAL_STATUS" in
         "PROPOSAL_STATUS_PASSED")
             echo "  ✅ Proposal #$PROPOSAL_ID has passed!"
