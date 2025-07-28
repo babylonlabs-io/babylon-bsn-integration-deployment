@@ -19,6 +19,7 @@ docker run --rm -v $(pwd)/.testnets:/data babylonlabs-io/babylond \
     --covenant-quorum 1 \
     --activation-height 1 \
     --unbonding-time 5 \
+    --max-finality-providers-in-script 5 \
     --covenant-pks "2d4ccbe538f846a750d82a77cd742895e51afcf23d86d05004a356b783902748" # Update if `covenant-keyring` directory changes
 
 # Create subdirectories for each component's configuration
