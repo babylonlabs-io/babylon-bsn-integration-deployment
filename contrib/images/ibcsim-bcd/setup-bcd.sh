@@ -188,7 +188,8 @@ BABYLON_INIT_MSG='{
   "btc_finality_code_id": '$BTC_FINALITY_CODE_ID',
   "btc_finality_msg": "'$BTC_FINALITY_INIT_MSG_B64'",
   "consumer_name": "test-consumer",
-  "consumer_description": "test-consumer-description"
+  "consumer_description": "test-consumer-description",
+  "destination_module": "btcstaking"
 }'
 
 # 3. Instantiate babylon contract
