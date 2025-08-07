@@ -30,7 +30,7 @@ build-foundry-anvil:
 
 build-deployment: build-babylond build-bitcoindsim build-vigilante build-btc-staker build-finality-provider build-covenant-signer build-covenant-emulator build-tmkms build-foundry-anvil
 
-start-deployment: stop-deployment build-deployment
+start-deployment: stop-deployment #build-deployment
 	./pre-deployment.sh
 	$(DOCKER) compose -f artifacts/docker-compose.yml up -d
 	./post-deployment.sh
@@ -42,4 +42,10 @@ stop-deployment:
 run-demo: start-deployment
 	@echo "🚀 Running Rollup BSN Demo..."
 	./demo.sh
+
+test-migration: start-deployment
+	@echo "🧪 Complete Migration Test (deploys contract and tests migration)..."
+	@echo "Waiting for deployment to be ready..."
+	@sleep 30
+	@bash ./scripts/test-migration.sh
 
