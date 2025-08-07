@@ -182,7 +182,7 @@ services:
   consumer-fp:
     container_name: consumer-fp
     image: babylonlabs-io/finality-provider
-    command: fpd start
+    command: cosmos-fpd start
     networks:
       localnet:
         ipv4_address: 192.168.10.13
