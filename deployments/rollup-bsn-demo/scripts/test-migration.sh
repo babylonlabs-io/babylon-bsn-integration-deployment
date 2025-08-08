@@ -78,7 +78,7 @@ fi
 
 # 4. Test migration
 echo "4. Testing migration..."
-MIGRATION_MSG='{"version": "v2.0.0"}'
+MIGRATION_MSG='{}'
 MIGRATE_JSON=$(docker exec babylondnode0 sh -c \
   "babylond --home $HOME_DIR tx wasm migrate $CONTRACT_ADDRESS $NEW_CODE_ID '$MIGRATION_MSG' \
      --from $ADMIN_KEY --chain-id $BBN_CHAIN_ID --keyring-backend test \
