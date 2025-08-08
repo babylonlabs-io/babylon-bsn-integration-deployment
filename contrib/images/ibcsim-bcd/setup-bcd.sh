@@ -384,18 +384,4 @@ done
 echo "Verifying BSN contracts are set..."
 $BINARY query babylon bsn-contracts --node http://localhost:$RPCPORT --output json | jq -r '.'
 
-# Create zoneconcierge channel now that contracts are ready
-echo "Creating zoneconcierge channel..."
-CONTRACT_ADDRESS=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-contract-by-code $BABYLON_CODE_ID --output json | jq -r '.contracts[-1]')
-CONTRACT_PORT="wasm.$CONTRACT_ADDRESS"
-echo "Contract address: $CONTRACT_ADDRESS"
-echo "Contract port: $CONTRACT_PORT"
-
-rly --home $RELAYER_CONF_DIR tx channel bcd --src-port zoneconcierge --dst-port $CONTRACT_PORT --order ordered --version zoneconcierge-1
-if [ $? -eq 0 ]; then
-    echo "  ✅ Created zoneconcierge IBC channel successfully!"
-else
-    echo "  ❌ Error creating zoneconcierge IBC channel"
-fi
-
 echo "BSN contracts setup completed."

@@ -48,7 +48,34 @@ while true; do
 done
 
 echo ""
-echo "⏳ Step 3: Waiting for IBC Channels"
+echo "🔗 Step 3: Creating Zoneconcierge Channel"
+echo "  → Waiting for Babylon contract to be deployed..."
+while true; do
+    CONTRACT_ADDRESS=$(docker exec ibcsim-bcd /bin/sh -c 'bcd query wasm list-contract-by-code 1 --output json | jq -r ".contracts[-1] // empty"')
+    
+    if [ -n "$CONTRACT_ADDRESS" ] && [ "$CONTRACT_ADDRESS" != "null" ] && [ "$CONTRACT_ADDRESS" != "" ]; then
+        echo "  → Found Babylon contract: $CONTRACT_ADDRESS"
+        break
+    else
+        echo "  → Babylon contract not yet deployed, waiting..."
+        sleep 10
+    fi
+done
+
+CONTRACT_PORT="wasm.$CONTRACT_ADDRESS"
+echo "  → Contract port: $CONTRACT_PORT"
+
+echo "  → Creating zoneconcierge IBC channel..."
+docker exec ibcsim-bcd /bin/sh -c "rly --home /data/relayer tx channel bcd --src-port zoneconcierge --dst-port $CONTRACT_PORT --order ordered --version zoneconcierge-1"
+if [ $? -eq 0 ]; then
+    echo "  ✅ Created zoneconcierge IBC channel successfully!"
+else
+    echo "  ❌ Error creating zoneconcierge IBC channel"
+    exit 1
+fi
+
+echo ""
+echo "⏳ Step 4: Waiting for IBC Channels"
 echo "  → Waiting for IBC channels to be ready..."
 while true; do
     # Fetch the port ID and channel ID from the Consumer IBC channel list
@@ -70,7 +97,7 @@ while true; do
 done
 
 echo ""
-echo "⚖️ Step 7a: Verifying BSN Contracts Proposal Status"
+echo "⚖️ Step 5: Verifying BSN Contracts Proposal Status"
 echo "  → Checking if BSN contracts governance proposal has passed..."
 while true; do
     # Get the latest passed proposal (should be the BSN contracts proposal)
@@ -96,7 +123,7 @@ while true; do
 done
 
 echo ""
-echo "📋 Step 7b: Getting BSN Contract Addresses"
+echo "📋 Step 6: Getting BSN Contract Addresses"
   echo "  → Getting contract addresses..."
   # Query BSN contract addresses using the babylon module CLI
   bsnContracts=$(docker exec ibcsim-bcd /bin/sh -c 'bcd query babylon bsn-contracts -o json')
@@ -114,7 +141,7 @@ echo "🎉 Integration between Babylon and bcd is ready!"
 echo "Now we will try out BTC staking on the consumer chain..."
 
 echo ""
-echo "👥 Step 4: Creating Finality Providers"
+echo "👥 Step 7: Creating Finality Providers"
 
 echo ""
 echo "  → Creating Babylon Finality Provider..."
@@ -213,7 +240,7 @@ docker restart consumer-fp
 echo "  ✅ Consumer finality provider restarted"
 
 echo ""
-echo "✅ Step 5: Verifying Finality Provider Storage"
+echo "✅ Step 8: Verifying Finality Provider Storage"
 echo "  → Checking if contract has stored the finality providers..."
 while true; do
     # Get the finality providers count from the contract state
@@ -231,7 +258,7 @@ while true; do
 done
 
 echo ""
-echo "🎲 Step 6: Ensuring Public Randomness Commitment"
+echo "🎲 Step 9: Ensuring Public Randomness Commitment"
 echo "  → Checking public randomness commitment..."
 while true; do
     pr_commit_info=$(docker exec ibcsim-bcd /bin/sh -c "bcd query wasm contract-state smart $btcFinalityContractAddr '{\"last_pub_rand_commit\":{\"btc_pk_hex\":\"$consumer_btc_pk\"}}' -o json")
@@ -245,7 +272,7 @@ while true; do
 done
 
 echo ""
-echo "₿ Step 7: Creating BTC Delegation"
+echo "₿ Step 10: Creating BTC Delegation"
 echo "  → Getting available BTC addresses..."
 sleep 5
 # Get the available BTC addresses for delegations
@@ -270,7 +297,7 @@ else
 fi
 
 echo ""
-echo "⏳ Step 8: Waiting for Delegation Activation"
+echo "⏳ Step 11: Waiting for Delegation Activation"
 echo "  → Monitoring delegation status in Babylon..."
 while true; do
     # Get the active delegations count from Babylon
@@ -288,7 +315,7 @@ while true; do
 done
 
 echo ""
-echo "📝 Step 9: Verifying Contract Storage"
+echo "📝 Step 12: Verifying Contract Storage"
 echo "  → Checking if contract has stored the delegations..."
 while true; do
     # Get the delegations count from the contract state
@@ -306,7 +333,7 @@ while true; do
 done
 
 echo ""
-echo "⚡ Step 10: Verifying Voting Power"
+echo "⚡ Step 13: Verifying Voting Power"
 echo "  → Ensuring finality providers have voting power..."
 while true; do
     fp_by_info=$(docker exec ibcsim-bcd /bin/sh -c "bcd query wasm contract-state smart $btcStakingContractAddr '{\"finality_providers_by_total_active_sats\":{}}' -o json")
@@ -323,11 +350,11 @@ while true; do
     fi
 done
 
-# NOTE: Steps 15-16 will fail due to contract bugs - see https://github.com/babylonlabs-io/cosmos-bsn-contracts/issues/156
+# NOTE: Steps 14-15 will fail due to contract bugs - see https://github.com/babylonlabs-io/cosmos-bsn-contracts/issues/156
 # Included for demonstration purposes to show expected behavior
 
 echo ""
-echo "✍️ Step 11: Verifying Finality Signatures"
+echo "✍️ Step 14: Verifying Finality Signatures"
 echo "⚠️  WARNING: This will fail due to known contract bugs (issue #156)"
 last_block_height=$(docker exec ibcsim-bcd /bin/sh -c "bcd query blocks --query \"block.height > 1\" --page 1 --limit 1 --order_by desc -o json | jq -r '.blocks[0].header.height'")
 last_block_height=$((last_block_height + 1))
@@ -344,7 +371,7 @@ while true; do
 done
 
 echo ""
-echo "🎯 Step 12: Verifying Block Finalization"
+echo "🎯 Step 15: Verifying Block Finalization"
 echo "  → Checking for finalized blocks..."
 
 # Query for finalized blocks instead of a specific block that might not exist
