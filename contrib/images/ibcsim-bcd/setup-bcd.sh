@@ -118,213 +118,243 @@ sed 's/"max_deposit_period": "[^"]*"/"max_deposit_period": "30s"/g' "$GENESIS_TE
 # Copy the modified file back and clean up
 cp "$GENESIS_TEMP" $CHAINDIR/$CHAINID/config/genesis.json
 rm -f "$GENESIS_TEMP" "$GENESIS_WORK"
-
 # Start
 echo "Starting $BINARY..."
 $BINARY --home $CHAINDIR/$CHAINID start --pruning=nothing --grpc-web.enable=false --grpc.address="0.0.0.0:$GRPCPORT" --log_level trace --trace --log_format 'plain' --log_no_color 2>&1 | tee $CHAINDIR/$CHAINID.log &
-sleep 20
+sleep 10
 
-# Echo the command with expanded variables
-echo "Bootstrapping contracts..."
+# Set up relayer and create IBC channels BEFORE uploading contracts
+echo "Setting up relayer and creating IBC channels..."
+BABYLON_KEY="babylon-key"
+BABYLON_CHAIN_ID="chain-test"
+CONSUMER_KEY="bcd-key"
+RELAYER_CONF_DIR="/data/relayer"
+BABYLON_HOME="/data/node1/babylond"
+BABYLON_NODE_RPC="http://babylondnode1:26657"
 
-ADMIN=$(bcd --home $CHAINDIR/$CHAINID keys show user --keyring-backend test -a)
+mkdir -p $RELAYER_CONF_DIR
+rly --home $RELAYER_CONF_DIR config init
+RELAYER_CONF=$RELAYER_CONF_DIR/config/config.yaml
 
-# 1. Store wasm contract codes and get their code IDs
-echo "Storing wasm contract codes..."
+cat <<EOT >$RELAYER_CONF
+global:
+    api-listen-addr: :5183
+    max-retries: 20
+    timeout: 30s
+    memo: ""
+    light-cache-size: 10
+chains:
+    babylon:
+        type: cosmos
+        value:
+            key: $BABYLON_KEY
+            chain-id: $BABYLON_CHAIN_ID
+            rpc-addr: $BABYLON_NODE_RPC
+            account-prefix: bbn
+            keyring-backend: test
+            gas-adjustment: 1.5
+            gas-prices: 0.002ubbn
+            min-gas-amount: 1
+            debug: true
+            timeout: 30s
+            output-format: json
+            sign-mode: direct
+            extra-codecs: []
+    bcd:
+        type: cosmos
+        value:
+            key: $CONSUMER_KEY
+            chain-id: $CHAINID
+            rpc-addr: http://localhost:$RPCPORT
+            account-prefix: bbnc
+            keyring-backend: test
+            gas-adjustment: 1.5
+            gas-prices: 0.002ustake
+            min-gas-amount: 1
+            debug: true
+            timeout: 30s
+            output-format: json
+            sign-mode: direct
+            extra-codecs: []
+paths:
+    bcd:
+        src:
+            chain-id: $BABYLON_CHAIN_ID
+        dst:
+            chain-id: $CHAINID
+EOT
 
-# Store babylon contract
-echo "Storing babylon contract code..."
-$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BABYLON_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
+echo "Inserting relayer keys..."
+if [ ! -f "$CHAINDIR/$CHAINID/key_seed.json" ]; then
+    echo "ERROR: Consumer key file not found!"
+    exit 1
+fi
+
+CONSUMER_MEMO=$(cat $CHAINDIR/$CHAINID/key_seed.json | jq .mnemonic | tr -d '"')
+if ! rly --home $RELAYER_CONF_DIR keys list bcd 2>/dev/null | grep -q "$CONSUMER_KEY"; then
+    rly --home $RELAYER_CONF_DIR keys restore bcd $CONSUMER_KEY "$CONSUMER_MEMO"
+fi
+
+if [ ! -f "$BABYLON_HOME/key_seed.json" ]; then
+    echo "ERROR: Babylon key file not found!"
+    exit 1
+fi
+
+BABYLON_MEMO=$(cat $BABYLON_HOME/key_seed.json | jq .secret | tr -d '"')
+if ! rly --home $RELAYER_CONF_DIR keys list babylon 2>/dev/null | grep -q "$BABYLON_KEY"; then
+    rly --home $RELAYER_CONF_DIR keys restore babylon $BABYLON_KEY "$BABYLON_MEMO"
+fi
+
 sleep 5
-BABYLON_CODE_ID=1
 
-# Store btc light client contract
-echo "Storing btc light client contract code..."
-$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTC_LC_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
+# Create IBC infrastructure
+echo "Creating IBC clients..."
+rly --home $RELAYER_CONF_DIR tx clients bcd
+sleep 10
+
+echo "Creating IBC connection..."
+rly --home $RELAYER_CONF_DIR tx connection bcd
 sleep 5
-BTC_LC_CODE_ID=2
 
-# Store btc staking contract
-echo "Storing btc staking contract code..."
-$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTCSTAKING_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
-sleep 5
-BTC_STAKING_CODE_ID=3
+echo "Creating IBC transfer channel..."
+rly --home $RELAYER_CONF_DIR tx channel bcd --src-port transfer --dst-port transfer --order unordered --version ics20-1
+sleep 3
 
-# Store btc finality contract
-echo "Storing btc finality contract code..."
-$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTCFINALITY_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
-sleep 5
-BTC_FINALITY_CODE_ID=4
+# Upload contract code and capture code IDs
+echo "Storing Babylon contract code..."
+$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BABYLON_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
+BABYLON_CODE_ID=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-code --output json | jq -r '.code_infos[-1].code_id')
+echo "BABYLON_CODE_ID: $BABYLON_CODE_ID"
 
-# 2. Prepare init messages
-echo "Preparing contract init messages..."
+echo "Storing BTC Light Client contract code..."
+$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTC_LC_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
+BTC_LC_CODE_ID=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-code --output json | jq -r '.code_infos[-1].code_id')
+echo "BTC_LC_CODE_ID: $BTC_LC_CODE_ID"
+
+echo "Storing BTC Staking contract code..."
+$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTCSTAKING_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
+BTCSTAKING_CODE_ID=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-code --output json | jq -r '.code_infos[-1].code_id')
+echo "BTCSTAKING_CODE_ID: $BTCSTAKING_CODE_ID"
+
+echo "Storing BTC Finality contract code..."
+$BINARY --home $CHAINDIR/$CHAINID tx wasm store "$BTCFINALITY_CONTRACT_CODE_FILE" $KEYRING --from user --chain-id $CHAINID --gas 200000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
+BTCFINALITY_CODE_ID=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-code --output json | jq -r '.code_infos[-1].code_id')
+echo "BTCFINALITY_CODE_ID: $BTCFINALITY_CODE_ID"
+
+# Prepare init messages for the other contracts
+ADMIN=$($BINARY --home $CHAINDIR/$CHAINID keys show user --keyring-backend test -a)
 NETWORK="regtest"
 BTC_CONFIRMATION_DEPTH=1
-BTC_FINALIZATION_TIMEOUT=2
-BABYLON_TAG="01020304"
-NOTIFY_COSMOS_ZONE=false
+CHECKPOINT_FINALIZATION_TIMEOUT=2
+CONSUMER_NAME="test-consumer"
+CONSUMER_DESCRIPTION="test-consumer-description"
+ICS20_CHANNEL_ID="channel-0"
+DESTINATION_MODULE="btcstaking"
 
-# Encode init messages in base64
-BTC_LC_INIT_MSG='{"network":"'$NETWORK'","btc_confirmation_depth":'$BTC_CONFIRMATION_DEPTH',"checkpoint_finalization_timeout":'$BTC_FINALIZATION_TIMEOUT'}'
-BTC_LC_INIT_MSG_B64=$(echo -n "$BTC_LC_INIT_MSG" | base64 -w 0)
+# Build the Babylon contract instantiation message
+BABYLON_INIT_MSG=$(jq -n \
+  --arg network "$NETWORK" \
+  --argjson btc_confirmation_depth $BTC_CONFIRMATION_DEPTH \
+  --argjson checkpoint_finalization_timeout $CHECKPOINT_FINALIZATION_TIMEOUT \
+  --argjson btc_light_client_code_id $BTC_LC_CODE_ID \
+  --argjson btc_staking_code_id $BTCSTAKING_CODE_ID \
+  --argjson btc_finality_code_id $BTCFINALITY_CODE_ID \
+  --arg consumer_name "$CONSUMER_NAME" \
+  --arg consumer_description "$CONSUMER_DESCRIPTION" \
+  --arg ics20_channel_id "$ICS20_CHANNEL_ID" \
+  --arg destination_module "$DESTINATION_MODULE" \
+  --arg admin "$ADMIN" \
+  '{network: $network, btc_confirmation_depth: $btc_confirmation_depth, checkpoint_finalization_timeout: $checkpoint_finalization_timeout, btc_light_client_code_id: $btc_light_client_code_id, btc_staking_code_id: $btc_staking_code_id, btc_finality_code_id: $btc_finality_code_id, consumer_name: $consumer_name, consumer_description: $consumer_description, ics20_channel_id: $ics20_channel_id, destination_module: $destination_module, admin: $admin}')
+echo "Babylon contract instantiation message: $BABYLON_INIT_MSG"
 
-BTC_STAKING_INIT_MSG='{"admin":"'$ADMIN'"}'
-BTC_STAKING_INIT_MSG_B64=$(echo -n "$BTC_STAKING_INIT_MSG" | base64 -w 0)
+# Instantiate only the Babylon contract
+echo "Instantiating Babylon contract with Code ID $BABYLON_CODE_ID..."
+$BINARY --home $CHAINDIR/$CHAINID tx wasm instantiate $BABYLON_CODE_ID "$BABYLON_INIT_MSG" --admin $ADMIN --label "babylon" $KEYRING --from user --chain-id $CHAINID --gas 20000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
+# Get the Babylon contract address by querying contracts by code ID
+BABYLON_ADDR=$($BINARY --home $CHAINDIR/$CHAINID query wasm list-contract-by-code $BABYLON_CODE_ID --output json | jq -r '.contracts[-1]')
+echo "Babylon Address: $BABYLON_ADDR"
 
-BTC_FINALITY_INIT_MSG='{"admin":"'$ADMIN'"}'
-BTC_FINALITY_INIT_MSG_B64=$(echo -n "$BTC_FINALITY_INIT_MSG" | base64 -w 0)
+# Query the Babylon contract's Config {} to get all contract addresses
+CONFIG_QUERY='{"config":{}}'
+CONFIG_RES=$($BINARY --home $CHAINDIR/$CHAINID query wasm contract-state smart $BABYLON_ADDR "$CONFIG_QUERY" --node http://localhost:$RPCPORT --output json)
+BTC_LC_ADDR=$(echo $CONFIG_RES | jq -r '.data.btc_light_client')
+BTC_STAKING_ADDR=$(echo $CONFIG_RES | jq -r '.data.btc_staking')
+BTC_FINALITY_ADDR=$(echo $CONFIG_RES | jq -r '.data.btc_finality')
 
-# Create babylon contract init message
-BABYLON_INIT_MSG='{
-  "network": "'$NETWORK'",
-  "babylon_tag": "'$BABYLON_TAG'",
-  "btc_confirmation_depth": '$BTC_CONFIRMATION_DEPTH',
-  "checkpoint_finalization_timeout": '$BTC_FINALIZATION_TIMEOUT',
-  "notify_cosmos_zone": '$NOTIFY_COSMOS_ZONE',
-  "btc_light_client_code_id": '$BTC_LC_CODE_ID',
-  "btc_light_client_msg": "'$BTC_LC_INIT_MSG_B64'",
-  "btc_staking_code_id": '$BTC_STAKING_CODE_ID',
-  "btc_staking_msg": "'$BTC_STAKING_INIT_MSG_B64'",
-  "btc_finality_code_id": '$BTC_FINALITY_CODE_ID',
-  "btc_finality_msg": "'$BTC_FINALITY_INIT_MSG_B64'",
-  "consumer_name": "test-consumer",
-  "consumer_description": "test-consumer-description"
-}'
-
-# 3. Instantiate babylon contract
-echo "Instantiating babylon contract..."
-INSTANTIATE_RESP=$($BINARY --home $CHAINDIR/$CHAINID tx wasm instantiate $BABYLON_CODE_ID "$BABYLON_INIT_MSG" --admin $ADMIN --label "babylon-contract" $KEYRING --from user --chain-id $CHAINID --gas 20000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y --output json)
-sleep 10
-
-# Extract contract addresses from transaction logs
-echo "Querying contract addresses..."
-echo "$INSTANTIATE_RESP"
-TX_HASH=$(echo "$INSTANTIATE_RESP" | jq -r '.txhash')
-sleep 5
-
-# Query the transaction to get contract addresses
-TX_RESULT=$($BINARY --home $CHAINDIR/$CHAINID query tx $TX_HASH --node http://localhost:$RPCPORT --output json)
-
-# Extract all contract addresses from instantiate events
-# The babylon contract instantiates 3 other contracts, so we get 4 addresses total
-CONTRACT_ADDRESSES=($(echo "$TX_RESULT" | jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="contract_address" or .key=="_contract_address") | .value'))
-
-echo "Found ${#CONTRACT_ADDRESSES[@]} contract addresses:"
-for i in "${!CONTRACT_ADDRESSES[@]}"; do
-    echo "  Contract $((i+1)): ${CONTRACT_ADDRESSES[$i]}"
-done
-
-# Assign contract addresses based on the order they were instantiated
-# 1st: Babylon contract (the main one we instantiated)
-# 2nd: BTC Light Client contract (instantiated by Babylon contract)
-# 3rd: BTC Staking contract (instantiated by Babylon contract)
-# 4th: BTC Finality contract (instantiated by Babylon contract)
-if [ ${#CONTRACT_ADDRESSES[@]} -ge 4 ]; then
-    BABYLON_ADDR=${CONTRACT_ADDRESSES[0]}
-    BTC_LC_ADDR=${CONTRACT_ADDRESSES[1]}
-    BTC_STAKING_ADDR=${CONTRACT_ADDRESSES[2]}
-    BTC_FINALITY_ADDR=${CONTRACT_ADDRESSES[3]}
-else
-    echo "Error: Expected 4 contract addresses, found ${#CONTRACT_ADDRESSES[@]}"
-    echo "Transaction result:"
-    echo "$TX_RESULT" | jq '.events[] | select(.type=="instantiate")'
-    exit 1
-fi
-
-echo "Contract addresses:"
-echo "Babylon: $BABYLON_ADDR"
-echo "BTC Light Client: $BTC_LC_ADDR"
-echo "BTC Staking: $BTC_STAKING_ADDR"
-echo "BTC Finality: $BTC_FINALITY_ADDR"
-
-# 4. Submit governance proposal to set BSN contracts
-echo "Submitting governance proposal to set BSN contracts..."
-# Query governance module address dynamically
-echo "Querying governance module address..."
-MODULE_ACCOUNTS=$($BINARY --home $CHAINDIR/$CHAINID query auth module-accounts --node http://localhost:$RPCPORT --output json)
-
-# Extract gov module address using the correct JSON path
-GOV_AUTHORITY=$(echo "$MODULE_ACCOUNTS" | jq -r '.accounts[] | select(.value.name=="gov") | .value.address')
-echo "Extracted governance authority: '$GOV_AUTHORITY'"
-
-if [ -z "$GOV_AUTHORITY" ] || [ "$GOV_AUTHORITY" = "null" ]; then
-    echo "Error: Could not extract governance module address"
-    echo "Available module accounts:"
-    echo "$MODULE_ACCOUNTS" | jq -r '.accounts[] | .value.name'
-    exit 1
-fi
-
-echo "Using governance authority: $GOV_AUTHORITY"
+# Get the governance module account address (this is the authority)
+GOV_AUTHORITY=$($BINARY --home $CHAINDIR/$CHAINID query auth module-account gov --output json | jq -r '.account.value.address')
+echo "Governance authority: $GOV_AUTHORITY"
 
 # Create proposal JSON file with correct message type
-PROPOSAL_FILE="/tmp/bsn_contracts_proposal.json"
-cat > "$PROPOSAL_FILE" << EOF
-{
-  "messages": [
-    {
-      "@type": "/babylonlabs.babylon.v1beta1.MsgSetBSNContracts",
-      "authority": "$GOV_AUTHORITY",
-      "contracts": {
-        "babylon_contract": "$BABYLON_ADDR",
-        "btc_light_client_contract": "$BTC_LC_ADDR",
-        "btc_staking_contract": "$BTC_STAKING_ADDR",
-        "btc_finality_contract": "$BTC_FINALITY_ADDR"
+echo "Creating governance proposal JSON..."
+PROPOSAL_FILE="$CHAINDIR/$CHAINID/bsn_contracts_proposal.json"
+DEPOSIT_AMOUNT="1000000$DENOM"
+jq -n \
+  --arg gov_authority "$GOV_AUTHORITY" \
+  --arg babylon_addr "$BABYLON_ADDR" \
+  --arg btc_lc_addr "$BTC_LC_ADDR" \
+  --arg btc_staking_addr "$BTC_STAKING_ADDR" \
+  --arg btc_finality_addr "$BTC_FINALITY_ADDR" \
+  --arg deposit_amount "$DEPOSIT_AMOUNT" \
+  '{
+    "messages": [
+      {
+        "@type": "/babylonlabs.babylon.v1beta1.MsgSetBSNContracts",
+        "authority": $gov_authority,
+        "contracts": {
+          "babylon_contract": $babylon_addr,
+          "btc_light_client_contract": $btc_lc_addr,
+          "btc_staking_contract": $btc_staking_addr,
+          "btc_finality_contract": $btc_finality_addr
+        }
       }
-    }
-  ],
-  "metadata": "Set BSN Contracts",
-  "title": "Set BSN Contracts",
-  "summary": "Set contract addresses for Babylon system",
-  "deposit": "1000000stake"
-}
-EOF
+    ],
+    "metadata": "Set BSN Contracts",
+    "title": "Set BSN Contracts",
+    "summary": "Set contract addresses for Babylon system",
+    "deposit": $deposit_amount
+  }' > "$PROPOSAL_FILE"
 
 echo "Created proposal file: $PROPOSAL_FILE"
-echo "Proposal content:"
-cat "$PROPOSAL_FILE"
+echo -n "Proposal content: "
+cat "$PROPOSAL_FILE" | jq -r '.'
 
-PROPOSAL_RESP=$($BINARY --home $CHAINDIR/$CHAINID tx gov submit-proposal "$PROPOSAL_FILE" $KEYRING --from user --chain-id $CHAINID --gas 2000000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y --output json)
-sleep 10
+# Submit governance proposal to set BSN contracts
+echo "Submitting governance proposal to set BSN contracts..."
+PROPOSAL_RESP=$($BINARY --home $CHAINDIR/$CHAINID tx gov submit-proposal "$PROPOSAL_FILE" $KEYRING --from user --chain-id $CHAINID --gas 2000000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y --output json)
+echo "Proposal response: $(echo $PROPOSAL_RESP | jq -r '.')"
 
 # Clean up the proposal file
 rm -f "$PROPOSAL_FILE"
 
 # Extract proposal ID
 PROPOSAL_TX_HASH=$(echo "$PROPOSAL_RESP" | jq -r '.txhash')
-sleep 5
+echo "Proposal transaction hash: $PROPOSAL_TX_HASH"
+sleep 3
 PROPOSAL_TX_RESULT=$($BINARY --home $CHAINDIR/$CHAINID query tx $PROPOSAL_TX_HASH --node http://localhost:$RPCPORT --output json)
-
-echo "Debugging proposal ID extraction:"
-echo "TX Hash: $PROPOSAL_TX_HASH"
-echo "Proposal events:"
-echo "$PROPOSAL_TX_RESULT" | jq '.events[] | select(.type=="submit_proposal")'
+echo "Proposal transaction result: $(echo $PROPOSAL_TX_RESULT | jq -r '.')"
 
 PROPOSAL_ID=$(echo "$PROPOSAL_TX_RESULT" | jq -r '.events[] | select(.type=="submit_proposal") | .attributes[] | select(.key=="proposal_id") | .value')
-
 echo "Extracted proposal ID: '$PROPOSAL_ID'"
 
+# Verify we got a valid proposal ID
 if [ -z "$PROPOSAL_ID" ] || [ "$PROPOSAL_ID" = "null" ]; then
-    echo "Failed to extract proposal ID, trying alternative method..."
-    # Try alternative extraction method
-    PROPOSAL_ID=$(echo "$PROPOSAL_TX_RESULT" | jq -r '.events[] | select(.type=="message") | .attributes[] | select(.key=="proposal_id") | .value')
-    echo "Alternative proposal ID: '$PROPOSAL_ID'"
-
-    if [ -z "$PROPOSAL_ID" ] || [ "$PROPOSAL_ID" = "null" ]; then
-        echo "Error: Could not extract proposal ID from transaction"
-        echo "Full transaction result:"
-        echo "$PROPOSAL_TX_RESULT" | jq '.'
-        exit 1
-    fi
+    echo "Error: Failed to get proposal ID. Checking available proposals..."
+    $BINARY --home $CHAINDIR/$CHAINID query gov proposals --output json --node http://localhost:$RPCPORT
+    exit 1
 fi
 
-echo "Submitted governance proposal with ID: $PROPOSAL_ID"
-
-# 5. Vote on the proposal
+# Vote on the proposal
 echo "Voting on proposal $PROPOSAL_ID..."
-$BINARY --home $CHAINDIR/$CHAINID tx gov vote "$PROPOSAL_ID" yes $KEYRING --from validator --chain-id $CHAINID --gas 200000 --gas-prices 0.01ustake --node http://localhost:$RPCPORT -y
-sleep 5
+$BINARY --home $CHAINDIR/$CHAINID tx gov vote "$PROPOSAL_ID" yes $KEYRING --from validator --chain-id $CHAINID --gas 200000 --gas-prices 0.01$BASEDENOM --node http://localhost:$RPCPORT -y
+sleep 3
 
-# 6. Wait for proposal to pass
+# Wait for proposal to pass
 echo "Waiting for proposal to pass..."
 while true; do
     PROPOSAL_STATUS=$($BINARY --home $CHAINDIR/$CHAINID query gov proposal $PROPOSAL_ID --node http://localhost:$RPCPORT --output json | jq -r '.proposal.status')
@@ -350,4 +380,8 @@ while true; do
     esac
 done
 
-echo "BSN contracts setup completed successfully!"
+# Verify the contracts are set
+echo "Verifying BSN contracts are set..."
+$BINARY query babylon bsn-contracts --node http://localhost:$RPCPORT --output json | jq -r '.'
+
+echo "BSN contracts setup completed."

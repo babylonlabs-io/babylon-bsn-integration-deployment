@@ -98,3 +98,4 @@ btcstaking-tracker:
   indexer-addr: http://electrs:3000
   fetch-comet-block-interval: 3s
   fetch-evidence-interval: 10s
+  reconnect-btc-node-interval: 10m
