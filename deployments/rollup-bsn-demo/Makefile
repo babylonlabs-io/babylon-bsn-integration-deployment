@@ -43,3 +43,9 @@ run-demo: start-deployment
 	@echo "🚀 Running Rollup BSN Demo..."
 	./demo.sh
 
+test-migration: start-deployment
+	@echo "🧪 Complete Migration Test (deploys contract and tests migration)..."
+	@echo "Waiting for deployment to be ready..."
+	@sleep 30
+	@bash ./scripts/test-migration.sh
+
